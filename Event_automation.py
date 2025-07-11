@@ -4,11 +4,12 @@ from dateutil import parser
 from html.parser import HTMLParser
 from slugify import slugify
 
-# ==== CONFIG ====
-PCO_APP_ID = "3197e88403e730cd03d8e009314a426df95fc07d1a5b6d5d52949ea710bdb847"
-PCO_SECRET = "cecfabdd7346f66ea5ca7b3d79b36a0c7ced23f958fe58beafe01ae77b6f53f8"
-WEBFLOW_TOKEN = "45793725ad61d085a12f6c836efddafab62c09c17d96dbf6479a99a1abf81fdc"
-COLLECTION_ID = "66438f6a7cccc808f6f0a075"
+import os
+
+PCO_APP_ID = os.environ["PCO_APP_ID"]
+PCO_SECRET = os.environ["PCO_SECRET"]
+WEBFLOW_TOKEN = os.environ["WEBFLOW_TOKEN"]
+COLLECTION_ID = os.environ["COLLECTION_ID"]
 WEBFLOW_API_BASE = "https://api.webflow.com/v2"
 
 # ==== HEADERS ====
