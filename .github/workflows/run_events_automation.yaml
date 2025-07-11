@@ -1,16 +1,16 @@
-name: Run Events Automation
+name: Sync Events
 
 on:
-  workflow_dispatch:
+  workflow_dispatch:   # Manual trigger
   schedule:
-    - cron: "0 13 * * *" # 8 AM Central Time
+    - cron: '0 13 * * *'  # Daily at 8AM CST (13:00 UTC)
 
 jobs:
   run-script:
     runs-on: ubuntu-latest
-
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout repo
+        uses: actions/checkout@v3
 
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -26,4 +26,4 @@ jobs:
           PCO_SECRET: ${{ secrets.PCO_SECRET }}
           WEBFLOW_TOKEN: ${{ secrets.WEBFLOW_TOKEN }}
           COLLECTION_ID: ${{ secrets.COLLECTION_ID }}
-        run: python events_automation.py
+        run: python Event_automation.py
