@@ -20,9 +20,6 @@ jobs:
       - name: Install dependencies from requirements.txt
         run: pip install -r requirements.txt
 
-      - name: Explicitly install supabase-py
-        run: pip install supabase
-
       - name: Run Connection Cards Sync script
         env:
           PCO_APP_ID: ${{ secrets.PCO_APP_ID }}
