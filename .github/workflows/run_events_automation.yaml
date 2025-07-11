@@ -1,0 +1,29 @@
+name: Run Events Automation
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 13 * * *" # 8 AM Central Time
+
+jobs:
+  run-script:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run script
+        env:
+          PCO_APP_ID: ${{ secrets.PCO_APP_ID }}
+          PCO_SECRET: ${{ secrets.PCO_SECRET }}
+          WEBFLOW_TOKEN: ${{ secrets.WEBFLOW_TOKEN }}
+          COLLECTION_ID: ${{ secrets.COLLECTION_ID }}
+        run: python events_automation.py
