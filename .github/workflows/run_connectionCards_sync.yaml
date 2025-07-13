@@ -1,10 +1,10 @@
 name: Run Connection Cards Sync
 
 on:
+  workflow_dispatch:
   schedule:
     - cron: "0 19 * * 0" # 1:00 PM CST on Sunday
     - cron: "0 20 * * 0" # 2:00 PM CST on Sunday
-  workflow_dispatch:
 
 jobs:
   run:
