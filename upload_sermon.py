@@ -167,29 +167,23 @@ def refresh_spreaker_token():
 
 def upload_to_spreaker(audio_path, title, description):
     print("⬆️ Uploading audio to Spreaker...")
-    access_token = SPREAKER_ACCESS_TOKEN
-    headers = {"Authorization": f"Bearer {access_token}"}
+    headers = {"Authorization": f"Bearer {SPREAKER_ACCESS_TOKEN}"}
     files = {
-        "audio_file": open(audio_path, "rb"),
+        "media_file": open(audio_path, "rb"),
         "title": (None, title),
         "description": (None, description),
-        "type": (None, "public"),
     }
     url = f"https://api.spreaker.com/v2/shows/{SPREAKER_SHOW_ID}/episodes"
     resp = requests.post(url, headers=headers, files=files)
 
-    if resp.status_code == 401:
-        print("⚠️ Token expired, refreshing...")
-        new_token = refresh_spreaker_token()
-        headers = {"Authorization": f"Bearer {new_token}"}
-        resp = requests.post(url, headers=headers, files=files)
-
-    resp.raise_for_status()
-    data = resp.json()
-    permalink = data["response"]["episode"]["permalink_url"]
-    episode_id = data["response"]["episode"]["episode_id"]
-    print(f"✅ Uploaded to Spreaker: {permalink}")
-    return permalink, episode_id
+    if resp.status_code != 200:
+        print("❌ Upload failed:", resp.status_code, resp.text)
+    else:
+        data = resp.json()
+        permalink = data["response"]["episode"]["permalink_url"]
+        episode_id = data["response"]["episode"]["episode_id"]
+        print(f"✅ Uploaded to Spreaker: {permalink}")
+        return permalink, episode_id
 
 
 def update_webflow(title, slug, description, vimeo_url, spreaker_url, thumb_url):
