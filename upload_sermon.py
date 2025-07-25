@@ -11,7 +11,7 @@ from boxsdk import JWTAuth, Client
 # ---------------- ENV VARS ----------------
 WEBFLOW_TOKEN = os.getenv("WEBFLOW_TOKEN")
 COLLECTION_ID = os.getenv("COLLECTION_ID")
-SPREAKER_SHOW_ID = os.getenv("SPREAKER_SHOW_ID") or "2817602"
+SPREAKER_SHOW_ID = "2817602"
 SPREAKER_ACCESS_TOKEN = os.getenv("SPREAKER_ACCESS_TOKEN")
 BOX_CONFIG = json.loads(os.getenv("BOX_JWT_JSON"))  # your Box JWT credentials
 GOOGLE_SERVICE_JSON = json.loads(os.getenv("GOOGLE_SERVICE_JSON"))

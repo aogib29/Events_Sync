@@ -27,18 +27,18 @@ jobs:
 
       - name: Run Sermon Upload Script
         env:
+          BOX_JWT_JSON: ${{ secrets.BOX_JWT_JSON }}
+
+          # ✅ Google Service Account JSON for Sheets
           GOOGLE_SERVICE_JSON: ${{ secrets.GOOGLE_SERVICE_JSON }}
-          BOX_CLIENT_ID: ${{ secrets.BOX_CLIENT_ID }}
-          BOX_CLIENT_SECRET: ${{ secrets.BOX_CLIENT_SECRET }}
-          BOX_ENTERPRISE_ID: ${{ secrets.BOX_ENTERPRISE_ID }}
-          BOX_JWT_KEY_ID: ${{ secrets.BOX_JWT_KEY_ID }}
-          BOX_JWT_PRIVATE_KEY: ${{ secrets.BOX_JWT_PRIVATE_KEY }}
-          BOX_JWT_PASSPHRASE: ${{ secrets.BOX_JWT_PASSPHRASE }}
+
+          # ✅ Vimeo API token
           VIMEO_ACCESS_TOKEN: ${{ secrets.VIMEO_ACCESS_TOKEN }}
-          SPREAKER_CLIENT_ID: ${{ secrets.SPREAKER_CLIENT_ID }}
-          SPREAKER_CLIENT_SECRET: ${{ secrets.SPREAKER_CLIENT_SECRET }}
+
+          # ✅ Spreaker API tokens
           SPREAKER_ACCESS_TOKEN: ${{ secrets.SPREAKER_ACCESS_TOKEN }}
-          SPREAKER_REFRESH_TOKEN: ${{ secrets.SPREAKER_REFRESH_TOKEN }}
+
+          # ✅ Webflow API token and collection ID
           WEBFLOW_TOKEN: ${{ secrets.WEBFLOW_TOKEN }}
           COLLECTION_ID: ${{ secrets.COLLECTION_ID }}
         run: python upload_sermon.py
