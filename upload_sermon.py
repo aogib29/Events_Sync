@@ -1,240 +1,255 @@
 import os
 import json
+import io
 import requests
-import mimetypes
 import subprocess
-from slugify import slugify
-from google.oauth2 import service_account
 from googleapiclient.discovery import build
+from google.oauth2 import service_account
 from boxsdk import JWTAuth, Client
 
-# ========== CONFIG ==========
-SHEET_ID = "1TSlHLDGO0Dn8G0jN8Ji7lmsUc2JxxLUVTvTZfdIHAdA"
-SERMON_FOLDER_ID = "332876783252"  # Box SermonUpload folder ID
-# ============================
+# ✅ Spreaker show ID (replace with your own)
+SPREAKER_SHOW_ID = "2817602"  # e.g. "12345678"
 
-# ========== ENV VARS ==========
-# Google Sheets
-GOOGLE_SERVICE_JSON = os.environ.get("GOOGLE_SERVICE_JSON")
+# ✅ Load env vars from GitHub Secrets
+SPREAKER_CLIENT_ID = os.environ.get("SPREAKER_CLIENT_ID")
+SPREAKER_CLIENT_SECRET = os.environ.get("SPREAKER_CLIENT_SECRET")
+SPREAKER_ACCESS_TOKEN = os.environ.get("SPREAKER_ACCESS_TOKEN")
+SPREAKER_REFRESH_TOKEN = os.environ.get("SPREAKER_REFRESH_TOKEN")
 
-# Box JWT Auth secrets
+VIMEO_ACCESS_TOKEN = os.environ.get("VIMEO_ACCESS_TOKEN")
+WEBFLOW_TOKEN = os.environ.get("WEBFLOW_TOKEN")
+COLLECTION_ID = os.environ.get("COLLECTION_ID")
+
 BOX_CLIENT_ID = os.environ.get("BOX_CLIENT_ID")
 BOX_CLIENT_SECRET = os.environ.get("BOX_CLIENT_SECRET")
 BOX_ENTERPRISE_ID = os.environ.get("BOX_ENTERPRISE_ID")
 BOX_JWT_KEY_ID = os.environ.get("BOX_JWT_KEY_ID")
 BOX_JWT_PRIVATE_KEY = os.environ.get("BOX_JWT_PRIVATE_KEY")
 BOX_JWT_PASSPHRASE = os.environ.get("BOX_JWT_PASSPHRASE")
+BOX_FOLDER_ID = "332876783252"  # SermonUpload folder
 
-# Vimeo
-VIMEO_ACCESS_TOKEN = os.environ.get("VIMEO_ACCESS_TOKEN")
+GOOGLE_SERVICE_JSON = os.environ.get("GOOGLE_SERVICE_JSON")
 
-# Spreaker
-SPREAKER_CLIENT_ID = os.environ.get("SPREAKER_CLIENT_ID")
-SPREAKER_CLIENT_SECRET = os.environ.get("SPREAKER_CLIENT_SECRET")
-
-# Webflow
-WEBFLOW_TOKEN = os.environ.get("WEBFLOW_TOKEN")
-COLLECTION_ID = os.environ.get("COLLECTION_ID")
-# ============================
+# ✅ Google Sheet details
+SHEET_ID = "1TSlHLDGO0Dn8G0jN8Ji7lmsUc2JxxLUVTvTZfdIHAdA"
+SHEET_RANGE = "A2:D2"  # adjust to your row/columns
 
 
-# ========== Google Sheets ==========
-def get_sermon_details():
-    creds_dict = json.loads(GOOGLE_SERVICE_JSON)
+def get_sheet_details():
+    print("📥 Fetching sermon details from Google Sheet...")
     creds = service_account.Credentials.from_service_account_info(
-        creds_dict,
-        scopes=["https://www.googleapis.com/auth/spreadsheets.readonly"]
+        json.loads(GOOGLE_SERVICE_JSON),
+        scopes=["https://www.googleapis.com/auth/spreadsheets.readonly"],
     )
-    service = build('sheets', 'v4', credentials=creds)
-    result = service.spreadsheets().values().get(
-        spreadsheetId=SHEET_ID,
-        range="A2:E2"
-    ).execute()
-    row = result.get('values', [])[0]
+    service = build("sheets", "v4", credentials=creds)
+    result = (
+        service.spreadsheets()
+        .values()
+        .get(spreadsheetId=SHEET_ID, range=SHEET_RANGE)
+        .execute()
+    )
+    values = result.get("values", [])
+    if not values or not values[0]:
+        raise RuntimeError("No details found in Google Sheet")
+    row = values[0]
+    # Expected columns: Title, Preacher, Passage, Date
     return {
         "title": row[0],
-        "date": row[1],
-        "series": row[2],
-        "preacher": row[3],
-        "passage": row[4],
+        "preacher": row[1],
+        "passage": row[2],
+        "date": row[3],
     }
 
 
-# ========== Box (JWTAuth) ==========
 def get_box_client():
     auth = JWTAuth(
         client_id=BOX_CLIENT_ID,
         client_secret=BOX_CLIENT_SECRET,
         enterprise_id=BOX_ENTERPRISE_ID,
         jwt_key_id=BOX_JWT_KEY_ID,
-        rsa_private_key_data=BOX_JWT_PRIVATE_KEY.encode(),
-        rsa_private_key_passphrase=BOX_JWT_PASSPHRASE
+        rsa_private_key_data=BOX_JWT_PRIVATE_KEY.replace("\\n", "\n"),
+        rsa_private_key_passphrase=BOX_JWT_PASSPHRASE,
     )
-    auth.authenticate_instance()
     client = Client(auth)
     return client
 
+
 def download_box_files():
+    print("📦 Downloading from Box SermonUpload folder...")
     client = get_box_client()
-    items = client.folder(SERMON_FOLDER_ID).get_items(limit=100)
-    video_file = None
-    thumb_file = None
+    folder = client.folder(folder_id=BOX_FOLDER_ID).get()
+    items = folder.get_items(limit=100)
+    video_path = None
+    thumb_path = None
     for item in items:
         name = item.name.lower()
-        if name.endswith(('.mp4', '.mov')):
-            video_file = item
-        if name.endswith(('.png', '.jpg', '.jpeg')):
-            thumb_file = item
-    if not video_file:
-        raise Exception("❌ No video file found in SermonUpload folder.")
-    # download video
-    with open(video_file.name, 'wb') as f:
-        f.write(video_file.content())
-    thumb_path = None
-    if thumb_file:
-        with open(thumb_file.name, 'wb') as f:
-            f.write(thumb_file.content())
-        thumb_path = thumb_file.name
-    return video_file.name, thumb_path
+        if name.endswith(".mp4") or name.endswith(".mov"):
+            with open("sermon_video.mp4", "wb") as f:
+                f.write(item.content())
+            video_path = "sermon_video.mp4"
+        elif name.endswith(".jpg") or name.endswith(".jpeg") or name.endswith(".png"):
+            with open("thumbnail_image", "wb") as f:
+                f.write(item.content())
+            thumb_path = "thumbnail_image"
+    if not video_path:
+        raise RuntimeError("No video file found in Box SermonUpload folder.")
+    return video_path, thumb_path
 
 
-# ========== Vimeo ==========
 def upload_to_vimeo(video_path, title, description):
-    headers = {"Authorization": f"bearer {VIMEO_ACCESS_TOKEN}"}
-    size = os.path.getsize(video_path)
-    data = {
-        "upload": {"approach": "tus", "size": size},
-        "name": title,
-        "description": description
+    print("⬆️ Uploading video to Vimeo...")
+    headers = {
+        "Authorization": f"Bearer {VIMEO_ACCESS_TOKEN}",
+        "Content-Type": "application/json",
+        "Accept": "application/vnd.vimeo.*+json;version=3.4",
     }
-    resp = requests.post("https://api.vimeo.com/me/videos", headers=headers, json=data)
-    resp.raise_for_status()
-    upload_link = resp.json()['upload']['upload_link']
-    video_uri = resp.json()['uri']
-    # upload via tus
-    with open(video_path, 'rb') as f:
+
+    # Create upload ticket
+    create_resp = requests.post(
+        "https://api.vimeo.com/me/videos",
+        headers=headers,
+        json={
+            "upload": {"approach": "tus", "size": os.path.getsize(video_path)},
+            "name": title,
+            "description": description,
+        },
+    )
+    create_resp.raise_for_status()
+    upload_link = create_resp.json()["upload"]["upload_link"]
+    vimeo_link = create_resp.json()["link"]
+    vimeo_thumb = create_resp.json()["pictures"]["sizes"][0]["link"]
+
+    # Upload video binary
+    with open(video_path, "rb") as f:
         tus_headers = {
             "Tus-Resumable": "1.0.0",
             "Upload-Offset": "0",
             "Content-Type": "application/offset+octet-stream",
-            "Authorization": f"bearer {VIMEO_ACCESS_TOKEN}"
         }
-        r = requests.patch(upload_link, headers=tus_headers, data=f)
-        r.raise_for_status()
-    vresp = requests.get(f"https://api.vimeo.com{video_uri}", headers=headers)
-    vresp.raise_for_status()
-    vdata = vresp.json()
-    video_link = vdata['link']
-    pics = vdata.get('pictures', {}).get('sizes', [])
-    thumb = pics[-1]['link'] if pics else None
-    return video_link, thumb
+        tus_headers.update({"Authorization": f"Bearer {VIMEO_ACCESS_TOKEN}"})
+        resp = requests.patch(upload_link, headers=tus_headers, data=f)
+        resp.raise_for_status()
+
+    print(f"✅ Uploaded to Vimeo: {vimeo_link}")
+    return vimeo_link, vimeo_thumb
 
 
-# ========== Audio Extraction ==========
 def extract_audio(video_path):
-    audio_path = "sermon_audio.mp3"
+    print("🎧 Extracting audio...")
+    audio_output = "sermon_audio.mp3"
     subprocess.run([
-        "ffmpeg", "-y",
+        "ffmpeg",
         "-i", video_path,
         "-vn",
-        "-acodec", "mp3",
-        "-ab", "192k",
+        "-acodec", "libmp3lame",
         "-ar", "44100",
-        audio_path
+        "-ac", "2",
+        "-b:a", "192k",
+        audio_output
     ], check=True)
-    return audio_path
+    return audio_output
 
 
-# ========== Spreaker ==========
-def upload_to_spreaker(audio_path, title, description):
-    auth_resp = requests.post(
+def refresh_spreaker_token():
+    print("🔄 Refreshing Spreaker access token...")
+    resp = requests.post(
         "https://api.spreaker.com/oauth2/token",
-        data={"grant_type": "client_credentials"},
-        auth=(SPREAKER_CLIENT_ID, SPREAKER_CLIENT_SECRET)
+        data={
+            "grant_type": "refresh_token",
+            "client_id": SPREAKER_CLIENT_ID,
+            "client_secret": SPREAKER_CLIENT_SECRET,
+            "refresh_token": SPREAKER_REFRESH_TOKEN,
+        },
     )
-    auth_resp.raise_for_status()
-    token = auth_resp.json()['access_token']
-    headers = {"Authorization": f"Bearer {token}"}
-    files = {'media_file': open(audio_path, 'rb')}
-    data = {
-        'title': title,
-        'description': description,
-        'type': 'public'
+    resp.raise_for_status()
+    return resp.json()["access_token"]
+
+
+def upload_to_spreaker(audio_path, title, description):
+    print("⬆️ Uploading audio to Spreaker...")
+    access_token = SPREAKER_ACCESS_TOKEN
+    headers = {"Authorization": f"Bearer {access_token}"}
+    files = {
+        "audio_file": open(audio_path, "rb"),
+        "title": (None, title),
+        "description": (None, description),
+        "type": (None, "public"),
     }
-    r = requests.post("https://api.spreaker.com/v2/episodes", headers=headers, files=files, data=data)
-    r.raise_for_status()
-    ep = r.json()['response']['episode']
-    return ep['permalink_url'], ep['episode_id']
+    url = f"https://api.spreaker.com/v2/shows/{SPREAKER_SHOW_ID}/episodes"
+    resp = requests.post(url, headers=headers, files=files)
+
+    if resp.status_code == 401:
+        print("⚠️ Token expired, refreshing...")
+        new_token = refresh_spreaker_token()
+        headers = {"Authorization": f"Bearer {new_token}"}
+        resp = requests.post(url, headers=headers, files=files)
+
+    resp.raise_for_status()
+    data = resp.json()
+    permalink = data["response"]["episode"]["permalink_url"]
+    episode_id = data["response"]["episode"]["episode_id"]
+    print(f"✅ Uploaded to Spreaker: {permalink}")
+    return permalink, episode_id
 
 
-# ========== Webflow (Thumbnail + CMS) ==========
-def upload_thumbnail_to_webflow(thumbnail_path):
-    site_id = "YOUR_SITE_ID"  # Replace with your Webflow Site ID
-    headers = {"Authorization": f"Bearer {WEBFLOW_TOKEN}"}
-    mime_type = mimetypes.guess_type(thumbnail_path)[0] or "image/jpeg"
-    with open(thumbnail_path, 'rb') as f:
-        files = {'file': (os.path.basename(thumbnail_path), f, mime_type)}
-        r = requests.post(f"https://api.webflow.com/sites/{site_id}/assets", headers=headers, files=files)
-        r.raise_for_status()
-        return r.json()['files'][0]['url']
-
-def create_webflow_item(details, video_link, spreaker_url, episode_id, thumb_url):
-    slug = slugify(f"{details['title']}-{details['date']}")
+def update_webflow(title, slug, description, vimeo_url, spreaker_url, thumb_url):
+    print("🌐 Updating Webflow CMS...")
     headers = {
         "Authorization": f"Bearer {WEBFLOW_TOKEN}",
-        "accept-version": "1.0.0",
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
     }
-    payload = {
+    data = {
         "fields": {
-            "name": details['title'],
+            "name": title,
             "slug": slug,
+            "description": description,
+            "vimeo-url": vimeo_url,
+            "spreaker-url": spreaker_url,
+            "thumbnail-url": thumb_url,
             "_archived": False,
             "_draft": False,
-            "series": details['series'],
-            "preacher": details['preacher'],
-            "sermon-passage": details['passage'],
-            "sermon-date": details['date'],
-            "video-link": video_link,
-            "video-thumbnail": thumb_url,
-            "url": spreaker_url,
-            "episode-id": episode_id
         }
     }
-    r = requests.post(f"https://api.webflow.com/collections/{COLLECTION_ID}/items?live=true",
-                      headers=headers, json=payload)
-    r.raise_for_status()
-    print("✅ Webflow item created:", r.json()['slug'])
+    resp = requests.post(
+        f"https://api.webflow.com/collections/{COLLECTION_ID}/items",
+        headers=headers,
+        json=data,
+    )
+    resp.raise_for_status()
+    print("✅ Webflow CMS updated.")
 
 
-# ========== Main ==========
+def slugify(title, date):
+    import re
+    base = f"{title}-{date}"
+    slug = re.sub(r"[^a-zA-Z0-9]+", "-", base.lower()).strip("-")
+    return slug
+
+
 def main():
-    print("📥 Fetching sermon details from Google Sheet...")
-    details = get_sermon_details()
-    desc = f"{details['passage']} | {details['preacher']}"
-
-    print("📦 Downloading from Box SermonUpload folder...")
+    details = get_sheet_details()
     video_path, thumb_path = download_box_files()
-
-    print("⬆️ Uploading video to Vimeo...")
-    vimeo_link, vimeo_thumb = upload_to_vimeo(video_path, details['title'], desc)
-
-    print("🎧 Extracting audio...")
+    desc = f"{details['passage']} | {details['preacher']}"
+    vimeo_url, vimeo_thumb = upload_to_vimeo(video_path, details["title"], desc)
     audio_path = extract_audio(video_path)
+    spreaker_url, _ = upload_to_spreaker(audio_path, details["title"], desc)
 
-    print("⬆️ Uploading audio to Spreaker...")
-    spreaker_url, episode_id = upload_to_spreaker(audio_path, details['title'], desc)
-
+    slug = slugify(details["title"], details["date"])
+    thumb_final = vimeo_thumb
     if thumb_path:
-        print("🖼️ Uploading custom thumbnail to Webflow...")
-        thumb_url = upload_thumbnail_to_webflow(thumb_path)
-    else:
-        print("🖼️ Using Vimeo default thumbnail...")
-        thumb_url = vimeo_thumb
+        # You could optionally upload a custom thumb to Vimeo if needed
+        pass
 
-    print("🌐 Creating Webflow CMS item...")
-    create_webflow_item(details, vimeo_link, spreaker_url, episode_id, thumb_url)
-    print("✅ Done!")
+    update_webflow(
+        details["title"],
+        slug,
+        desc,
+        vimeo_url,
+        spreaker_url,
+        thumb_final
+    )
+
+    print("🎉 All done!")
 
 
 if __name__ == "__main__":

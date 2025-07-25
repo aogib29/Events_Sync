@@ -4,7 +4,7 @@ on:
   schedule:
     # Runs every Sunday at 2:00 PM CST (20:00 UTC)
     - cron: "0 20 * * 0"
-  workflow_dispatch: # allows manual trigger from GitHub Actions tab
+  workflow_dispatch:
 
 jobs:
   upload:
@@ -37,6 +37,8 @@ jobs:
           VIMEO_ACCESS_TOKEN: ${{ secrets.VIMEO_ACCESS_TOKEN }}
           SPREAKER_CLIENT_ID: ${{ secrets.SPREAKER_CLIENT_ID }}
           SPREAKER_CLIENT_SECRET: ${{ secrets.SPREAKER_CLIENT_SECRET }}
+          SPREAKER_ACCESS_TOKEN: ${{ secrets.SPREAKER_ACCESS_TOKEN }}
+          SPREAKER_REFRESH_TOKEN: ${{ secrets.SPREAKER_REFRESH_TOKEN }}
           WEBFLOW_TOKEN: ${{ secrets.WEBFLOW_TOKEN }}
           COLLECTION_ID: ${{ secrets.COLLECTION_ID }}
         run: python upload_sermon.py
