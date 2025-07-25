@@ -180,7 +180,7 @@ def upload_to_spreaker(audio_path, title, description):
         print("❌ Upload failed:", resp.status_code, resp.text)
     else:
         data = resp.json()
-        permalink = data["response"]["episode"]["permalink_url"]
+        permalink = data["response"]["site_url"]
         episode_id = data["response"]["episode"]["episode_id"]
         print(f"✅ Uploaded to Spreaker: {permalink}")
         return permalink, episode_id
