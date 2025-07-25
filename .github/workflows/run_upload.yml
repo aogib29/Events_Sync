@@ -2,7 +2,7 @@ name: Run Sermon Upload
 
 on:
   schedule:
-    # Runs every Sunday at 2:00 PM CST (which is 20:00 UTC)
+    # Runs every Sunday at 2:00 PM CST (20:00 UTC)
     - cron: "0 20 * * 0"
   workflow_dispatch: # allows manual trigger from GitHub Actions tab
 
@@ -25,7 +25,12 @@ jobs:
       - name: Run Sermon Upload Script
         env:
           GOOGLE_SERVICE_JSON: ${{ secrets.GOOGLE_SERVICE_JSON }}
-          BOX_DEVELOPER_TOKEN: ${{ secrets.BOX_DEVELOPER_TOKEN }}
+          BOX_CLIENT_ID: ${{ secrets.BOX_CLIENT_ID }}
+          BOX_CLIENT_SECRET: ${{ secrets.BOX_CLIENT_SECRET }}
+          BOX_ENTERPRISE_ID: ${{ secrets.BOX_ENTERPRISE_ID }}
+          BOX_JWT_KEY_ID: ${{ secrets.BOX_JWT_KEY_ID }}
+          BOX_JWT_PRIVATE_KEY: ${{ secrets.BOX_JWT_PRIVATE_KEY }}
+          BOX_JWT_PASSPHRASE: ${{ secrets.BOX_JWT_PASSPHRASE }}
           VIMEO_ACCESS_TOKEN: ${{ secrets.VIMEO_ACCESS_TOKEN }}
           SPREAKER_CLIENT_ID: ${{ secrets.SPREAKER_CLIENT_ID }}
           SPREAKER_CLIENT_SECRET: ${{ secrets.SPREAKER_CLIENT_SECRET }}
