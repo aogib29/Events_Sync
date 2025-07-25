@@ -55,9 +55,10 @@ def get_sheet_details():
     # Expected columns: Title, Preacher, Passage, Date
     return {
         "title": row[0],
-        "preacher": row[1],
-        "passage": row[2],
-        "date": row[3],
+        "preacher": row[3],
+        "passage": row[5],
+        "date": row[1],
+        "series": row[2],
     }
 
 
@@ -169,21 +170,33 @@ def upload_to_spreaker(audio_path, title, description):
     print("⬆️ Uploading audio to Spreaker...")
     headers = {"Authorization": f"Bearer {SPREAKER_ACCESS_TOKEN}"}
     files = {
-        "media_file": open(audio_path, "rb"),
+        "media_file": open(audio_path, "rb"),  # ✅ use media_file, not audio_file
         "title": (None, title),
         "description": (None, description),
     }
     url = f"https://api.spreaker.com/v2/shows/{SPREAKER_SHOW_ID}/episodes"
     resp = requests.post(url, headers=headers, files=files)
+    resp.raise_for_status()
 
-    if resp.status_code != 200:
-        print("❌ Upload failed:", resp.status_code, resp.text)
-    else:
-        data = resp.json()
-        permalink = data["response"]["site_url"]
-        episode_id = data["response"]["episode"]["episode_id"]
-        print(f"✅ Uploaded to Spreaker: {permalink}")
-        return permalink, episode_id
+    data = resp.json()
+    response_obj = data.get("response", {})
+
+    # Look for whichever field is present
+    permalink = (
+        response_obj.get("site_url")
+        or response_obj.get("permalink_url")
+        or response_obj.get("download_url")
+    )
+    episode_id = response_obj.get("episode_id")
+
+    if not permalink:
+        # Print debug info if missing
+        print("⚠️ Spreaker response did not include site_url. Full response:")
+        print(json.dumps(data, indent=2))
+
+    print(f"✅ Uploaded to Spreaker: {permalink} (episode_id={episode_id})")
+    return permalink, episode_id
+
 
 
 def update_webflow(title, slug, description, vimeo_url, spreaker_url, thumb_url):
@@ -195,7 +208,6 @@ def update_webflow(title, slug, description, vimeo_url, spreaker_url, thumb_url)
     data = {
         "fields": {
             "name": title,
-            "slug": slug,
             "description": description,
             "vimeo-url": vimeo_url,
             "spreaker-url": spreaker_url,
