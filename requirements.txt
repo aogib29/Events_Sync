@@ -3,3 +3,8 @@ supabase==2.16.0
 requests==2.31.0
 python-slugify==8.0.1
 python-dateutil==2.9.0.post0
+google-api-python-client
+google-auth
+google-auth-httplib2
+google-auth-oauthlib
+boxsdk
