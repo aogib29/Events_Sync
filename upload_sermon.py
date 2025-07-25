@@ -56,7 +56,7 @@ def get_sheet_details():
     return {
         "title": row[0],
         "preacher": row[3],
-        "passage": row[5],
+        "passage": row[4],
         "date": row[1],
         "series": row[2],
     }
