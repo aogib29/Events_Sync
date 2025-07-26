@@ -75,14 +75,15 @@ def upload_to_vimeo(video_path, title, description):
             files={"file_data": f},
             data={"name": title, "description": description}
         )
+    print("📜 Vimeo response status:", resp.status_code)
+    print("📜 Vimeo response body:", resp.text)  # 👈 ADD THIS
     resp.raise_for_status()
     data = resp.json()
     vimeo_link = data.get("link")
-    pictures = data.get("pictures", {})
     vimeo_thumb = None
-    if "sizes" in pictures:
-        if len(pictures["sizes"]) > 0:
-            vimeo_thumb = pictures["sizes"][-1]["link"]
+    pictures = data.get("pictures", {})
+    if "sizes" in pictures and len(pictures["sizes"]) > 0:
+        vimeo_thumb = pictures["sizes"][-1]["link"]
     print(f"✅ Uploaded to Vimeo: {vimeo_link}")
     return vimeo_link, vimeo_thumb
 
