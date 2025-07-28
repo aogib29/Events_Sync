@@ -49,7 +49,7 @@ def get_latest_vimeo_video():
 
 # ---------------- AUDIO EXTRACTION ----------------
 def extract_audio(video_url):
-    print("🏏 Extracting audio...")
+    print("\ud83c\udfcf Extracting audio...")
     video_path = "/tmp/temp_video.mp4"
     audio_path = "/tmp/sermon_audio.mp3"
     subprocess.run(["curl", "-L", video_url, "-o", video_path], check=True)
@@ -139,7 +139,7 @@ def fetch_collection_schema():
     print("🧹 Webflow collection field slugs:")
     for f in fields:
         print(f"- {f}")
-    return set(fields)
+    return set(normalize(f) for f in fields)
 
 # ---------------- WEBFLOW ----------------
 def update_webflow(title, slug, passage, vimeo_url, spreaker_url, episode_id, preacher, series_id, sermon_date_raw):
@@ -165,7 +165,7 @@ def update_webflow(title, slug, passage, vimeo_url, spreaker_url, episode_id, pr
         "name": title,
         "slug": slug
     }
-    filtered_fields = {k: v for k, v in all_fields.items() if k in valid_slugs}
+    filtered_fields = {k: v for k, v in all_fields.items() if normalize(k) in valid_slugs}
 
     data = {
         "fieldData": filtered_fields,
