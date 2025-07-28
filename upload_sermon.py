@@ -6,16 +6,15 @@ import subprocess
 from datetime import datetime
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
-from boxsdk import JWTAuth, Client
 
 # ---------------- ENV VARS ----------------
 WEBFLOW_TOKEN = os.getenv("WEBFLOW_TOKEN")
 COLLECTION_ID = os.getenv("COLLECTION_ID")
 SPREAKER_SHOW_ID = "2817602"
 SPREAKER_ACCESS_TOKEN = os.getenv("SPREAKER_ACCESS_TOKEN")
-BOX_CONFIG = json.loads(os.getenv("BOX_JWT_JSON"))  # your Box JWT credentials
 GOOGLE_SERVICE_JSON = json.loads(os.getenv("GOOGLE_SERVICE_JSON"))
 SHEET_ID = "1TSlHLDGO0Dn8G0jN8Ji7lmsUc2JxxLUVTvTZfdIHAdA"
+VIMEO_ACCESS_TOKEN = os.getenv("VIMEO_ACCESS_TOKEN")
 
 # ---------------- GOOGLE SHEET ----------------
 def get_sheet_details():
@@ -28,69 +27,31 @@ def get_sheet_details():
         raise Exception("No data found in sheet")
     row = values[0]
     return {
-        "date": row[0],      # sermon date
-        "title": row[1],     # sermon title
-        "passage": row[2],   # passage
-        "preacher": row[3],  # preacher
-        "series": row[4]     # series name
+        "date": row[0],
+        "title": row[1],
+        "passage": row[2],
+        "preacher": row[3],
+        "series": row[4]
     }
-
-# ---------------- BOX ----------------
-def get_box_client():
-    auth = JWTAuth.from_settings_dictionary(BOX_CONFIG)
-    client = Client(auth)
-    return client
-
-def download_box_files():
-    print("📦 Downloading from Box SermonUpload folder...")
-    client = get_box_client()
-    folder_id = "332876783252"
-    folder = client.folder(folder_id=folder_id).get()
-    items = folder.get_items(limit=100)
-    video_path = None
-    thumb_path = None
-    for item in items:
-        if item.name.lower().endswith(('.mp4', '.mov')):
-            video_path = f"/tmp/{item.name}"
-            with open(video_path, "wb") as f:
-                client.file(item.id).download_to(f)
-        if item.name.lower().endswith(('.png', '.jpg', '.jpeg')):
-            thumb_path = f"/tmp/{item.name}"
-            with open(thumb_path, "wb") as f:
-                client.file(item.id).download_to(f)
-    if not video_path:
-        raise Exception("No video file found in Box folder.")
-    return video_path, thumb_path
 
 # ---------------- VIMEO ----------------
-def upload_to_vimeo(video_path, title, description):
-    print("⬆️ Uploading video to Vimeo...")
-    headers = {
-        "Authorization": f"Bearer {os.getenv('VIMEO_ACCESS_TOKEN')}"
-    }
-    with open(video_path, 'rb') as f:
-        resp = requests.post(
-            "https://api.vimeo.com/me/videos",
-            headers=headers,
-            files={"file_data": f},
-            data={"name": title, "description": description}
-        )
-    print("📜 Vimeo response status:", resp.status_code)
-    print("📜 Vimeo response body:", resp.text)  # 👈 ADD THIS
+def get_latest_vimeo_video():
+    headers = {"Authorization": f"Bearer {VIMEO_ACCESS_TOKEN}"}
+    params = {"sort": "date", "direction": "desc", "per_page": 1}
+    resp = requests.get("https://api.vimeo.com/me/videos", headers=headers, params=params)
     resp.raise_for_status()
-    data = resp.json()
-    vimeo_link = data.get("link")
-    vimeo_thumb = None
-    pictures = data.get("pictures", {})
-    if "sizes" in pictures and len(pictures["sizes"]) > 0:
-        vimeo_thumb = pictures["sizes"][-1]["link"]
-    print(f"✅ Uploaded to Vimeo: {vimeo_link}")
-    return vimeo_link, vimeo_thumb
+    video = resp.json()["data"][0]
+    return {
+        "url": video["link"],
+        "download": video.get("download", [{}])[0].get("link")
+    }
 
 # ---------------- AUDIO EXTRACTION ----------------
-def extract_audio(video_path):
-    print("🎧 Extracting audio...")
+def extract_audio(video_url):
+    print("🎿 Extracting audio...")
+    video_path = "/tmp/temp_video.mp4"
     audio_path = "/tmp/sermon_audio.mp3"
+    subprocess.run(["curl", "-L", video_url, "-o", video_path], check=True)
     subprocess.run([
         "ffmpeg", "-i", video_path,
         "-vn", "-acodec", "libmp3lame", "-ac", "2", "-ab", "192k", "-ar", "44100",
@@ -110,21 +71,16 @@ def upload_to_spreaker(audio_path, title, description):
     url = f"https://api.spreaker.com/v2/shows/{SPREAKER_SHOW_ID}/episodes"
     resp = requests.post(url, headers=headers, files=files)
     resp.raise_for_status()
-    data = resp.json()
-    response_obj = data.get("response", {})
-    # Try various keys for URL
-    permalink = response_obj.get("site_url") or response_obj.get("permalink_url") or response_obj.get("download_url")
-    episode_id = response_obj.get("episode_id")
+    data = resp.json().get("response", {})
+    permalink = data.get("site_url") or data.get("permalink_url")
+    episode_id = data.get("episode_id")
     print(f"✅ Uploaded to Spreaker: {permalink} (episode_id={episode_id})")
     return permalink, episode_id
 
 # ---------------- UTILS ----------------
 def slugify(title, date_str):
     slug_title = re.sub(r'[^a-zA-Z0-9]+', '-', title.lower()).strip('-')
-    try:
-        dt = datetime.strptime(date_str, "%Y-%m-%d")
-    except ValueError:
-        dt = datetime.strptime(date_str, "%m/%d/%Y")
+    dt = datetime.strptime(date_str, "%Y-%m-%d") if '-' in date_str else datetime.strptime(date_str, "%m/%d/%Y")
     return f"{slug_title}-{dt.strftime('%Y-%m-%d')}"
 
 def build_embed_code(title, episode_id):
@@ -132,10 +88,7 @@ def build_embed_code(title, episode_id):
     return f"https://www.spreaker.com/episode/{slug}--{episode_id}"
 
 def format_sermon_date(raw_date):
-    try:
-        dt = datetime.strptime(raw_date, "%Y-%m-%d")
-    except ValueError:
-        dt = datetime.strptime(raw_date, "%m/%d/%Y")
+    dt = datetime.strptime(raw_date, "%Y-%m-%d") if '-' in raw_date else datetime.strptime(raw_date, "%m/%d/%Y")
     return dt.strftime("%Y-%m-%dT00:00:00.000Z")
 
 # ---------------- FETCH SERIES ----------------
@@ -162,7 +115,6 @@ def update_webflow(title, slug, passage, vimeo_url, spreaker_url, episode_id, pr
     print("🌐 Updating Webflow CMS...")
     sermon_date = format_sermon_date(sermon_date_raw)
     embed_code = build_embed_code(title, episode_id)
-
     url = f"https://api.webflow.com/v2/collections/{COLLECTION_ID}/items?skipInvalidFiles=true"
     headers = {
         "Authorization": f"Bearer {WEBFLOW_TOKEN}",
@@ -190,33 +142,25 @@ def update_webflow(title, slug, passage, vimeo_url, spreaker_url, episode_id, pr
 
 # ---------------- MAIN ----------------
 def main():
-    print("📥 Fetching sermon details from Google Sheet...")
+    print("📅 Fetching sermon details from Google Sheet...")
     details = get_sheet_details()
-
-    video_path, thumb_path = download_box_files()
-    desc_for_vimeo = f"{details['passage']} | {details['preacher']}"
-
-    vimeo_url, vimeo_thumb = upload_to_vimeo(video_path, details["title"], desc_for_vimeo)
-
-    audio_path = extract_audio(video_path)
+    vimeo = get_latest_vimeo_video()
+    audio_path = extract_audio(vimeo["download"])
     spreaker_url, episode_id = upload_to_spreaker(audio_path, details["title"], details["passage"])
-
     slug = slugify(details["title"], details["date"])
     series_lookup = fetch_series_lookup()
     series_id = series_lookup.get(details.get("series", "").strip(), None)
-
     update_webflow(
         details["title"],
         slug,
         details["passage"],
-        vimeo_url,
+        vimeo["url"],
         spreaker_url,
         episode_id,
         details["preacher"],
         series_id,
         details["date"]
     )
-
     print("🎉 All done!")
 
 if __name__ == "__main__":
