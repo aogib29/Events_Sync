@@ -49,7 +49,7 @@ def get_latest_vimeo_video():
 
 # ---------------- AUDIO EXTRACTION ----------------
 def extract_audio(video_url):
-    print("🎿 Extracting audio...")
+    print("🏏 Extracting audio...")
     video_path = "/tmp/temp_video.mp4"
     audio_path = "/tmp/sermon_audio.mp3"
     subprocess.run(["curl", "-L", video_url, "-o", video_path], check=True)
@@ -136,9 +136,10 @@ def fetch_collection_schema():
     resp.raise_for_status()
     data = resp.json()
     fields = [f['slug'] for f in data.get('fieldDefinitions', [])]
-    print("🧩 Webflow collection field slugs:")
+    print("🧹 Webflow collection field slugs:")
     for f in fields:
         print(f"- {f}")
+    return set(fields)
 
 # ---------------- WEBFLOW ----------------
 def update_webflow(title, slug, passage, vimeo_url, spreaker_url, episode_id, preacher, series_id, sermon_date_raw):
@@ -151,22 +152,28 @@ def update_webflow(title, slug, passage, vimeo_url, spreaker_url, episode_id, pr
         "Content-Type": "application/json",
         "accept-version": "2.0.0",
     }
+
+    valid_slugs = fetch_collection_schema()
+    all_fields = {
+        "sermon-date": sermon_date,
+        "description": passage,
+        "preacher-2": preacher,
+        "series-2": series_id,
+        "embed-code": embed_code,
+        "episode-id": str(episode_id),
+        "video-link": vimeo_url,
+        "name": title,
+        "slug": slug
+    }
+    filtered_fields = {k: v for k, v in all_fields.items() if k in valid_slugs}
+
     data = {
-        "fieldData": {
-            "sermon-date": sermon_date,
-            "description": passage,
-            "preacher-2": preacher,
-            "series-2": series_id,
-            "embed-code": embed_code,
-            "episode-id": str(episode_id),
-            "video-link": vimeo_url,
-            "name": title,
-            "slug": slug
-        },
+        "fieldData": filtered_fields,
         "isDraft": False,
         "isArchived": False
     }
-    print("🛠 Payload to Webflow:")
+
+    print("🔦 Payload to Webflow (filtered):")
     print(json.dumps(data, indent=2))
     resp = requests.post(url, headers=headers, json=data)
     if resp.status_code >= 400:
@@ -176,7 +183,7 @@ def update_webflow(title, slug, passage, vimeo_url, spreaker_url, episode_id, pr
 
 # ---------------- MAIN ----------------
 def main():
-    print("📅 Fetching sermon details from Google Sheet...")
+    print("🗕 Fetching sermon details from Google Sheet...")
     details = get_sheet_details()
     vimeo = get_latest_vimeo_video()
     audio_path = extract_audio(vimeo["download"])
@@ -189,7 +196,6 @@ def main():
     print(f"🔑 Available normalized series keys: {list(series_lookup.keys())}")
     series_id = series_lookup.get(normalized_series, None)
     print(f"📦 Matched series_id: {series_id}")
-    fetch_collection_schema()
     update_webflow(
         details["title"],
         slug,
