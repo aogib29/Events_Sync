@@ -121,7 +121,7 @@ def fetch_series_lookup():
         name = item.get("fieldData", {}).get("name")
         if name:
             normalized = normalize(name)
-            lookup[normalized] = item.get("_id")
+            lookup[normalized] = item.get("id") or item.get("_id") or item.get("itemId")
     print(f"✅ Found {len(lookup)} series options")
     return lookup
 
