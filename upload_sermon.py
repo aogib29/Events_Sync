@@ -147,7 +147,11 @@ def update_webflow(title, slug, passage, vimeo_url, spreaker_url, episode_id, pr
         "isDraft": False,
         "isArchived": False
     }
+    print("🛠 Payload to Webflow:")
+    print(json.dumps(data, indent=2))
     resp = requests.post(url, headers=headers, json=data)
+    if resp.status_code >= 400:
+        print("❌ Webflow error response:", resp.text)
     resp.raise_for_status()
     print("✅ Webflow CMS updated:", resp.json())
 
