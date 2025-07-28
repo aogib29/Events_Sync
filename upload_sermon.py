@@ -170,6 +170,8 @@ def main():
     slug = slugify(details["title"], details["date"])
     series_lookup = fetch_series_lookup()
     normalized_series = normalize(details.get("series", ""))
+    print(f"🔍 Normalized series from sheet: '{normalized_series}'")
+    print(f"🔑 Available normalized series keys: {list(series_lookup.keys())}")
     series_id = series_lookup.get(normalized_series, None)
     update_webflow(
         details["title"],
