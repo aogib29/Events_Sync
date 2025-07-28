@@ -173,6 +173,7 @@ def main():
     print(f"🔍 Normalized series from sheet: '{normalized_series}'")
     print(f"🔑 Available normalized series keys: {list(series_lookup.keys())}")
     series_id = series_lookup.get(normalized_series, None)
+    print(f"📦 Matched series_id: {series_id}")
     update_webflow(
         details["title"],
         slug,
