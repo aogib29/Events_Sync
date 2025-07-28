@@ -43,6 +43,7 @@ def get_latest_vimeo_video():
     video = resp.json()["data"][0]
     return {
         "url": video["link"],
+        "uri": video["uri"],
         "download": video.get("download", [{}])[0].get("link")
     }
 
@@ -71,9 +72,19 @@ def upload_to_spreaker(audio_path, title, description):
     url = f"https://api.spreaker.com/v2/shows/{SPREAKER_SHOW_ID}/episodes"
     resp = requests.post(url, headers=headers, files=files)
     resp.raise_for_status()
-    data = resp.json().get("response", {})
-    permalink = data.get("site_url") or data.get("permalink_url")
-    episode_id = data.get("episode_id")
+    episode_data = resp.json().get("response", {})
+    episode_id = episode_data.get("episode_id")
+
+    if not episode_id:
+        raise Exception(f"❌ Failed to retrieve Spreaker episode ID: {episode_data}")
+
+    # Fetch episode details
+    episode_url = f"https://api.spreaker.com/v2/episodes/{episode_id}"
+    episode_resp = requests.get(episode_url, headers=headers)
+    episode_resp.raise_for_status()
+    episode_info = episode_resp.json().get("response", {})
+    permalink = episode_info.get("site_url") or episode_info.get("permalink_url")
+
     print(f"✅ Uploaded to Spreaker: {permalink} (episode_id={episode_id})")
     return permalink, episode_id
 
@@ -146,7 +157,8 @@ def main():
     details = get_sheet_details()
     vimeo = get_latest_vimeo_video()
     audio_path = extract_audio(vimeo["download"])
-    spreaker_url, episode_id = upload_to_spreaker(audio_path, details["title"], details["passage"])
+    spreaker_desc = f"{details['passage']} | {details['preacher']}"
+    spreaker_url, episode_id = upload_to_spreaker(audio_path, details["title"], spreaker_desc)
     slug = slugify(details["title"], details["date"])
     series_lookup = fetch_series_lookup()
     series_id = series_lookup.get(details.get("series", "").strip(), None)
