@@ -102,6 +102,9 @@ def format_sermon_date(raw_date):
     dt = datetime.strptime(raw_date, "%Y-%m-%d") if '-' in raw_date else datetime.strptime(raw_date, "%m/%d/%Y")
     return dt.strftime("%Y-%m-%dT00:00:00.000Z")
 
+def normalize(text):
+    return re.sub(r'[^a-zA-Z0-9]+', '', text).lower().strip()
+
 # ---------------- FETCH SERIES ----------------
 def fetch_series_lookup():
     url = "https://api.webflow.com/v2/collections/6671ee53d920cd99f7d8463f/items"
@@ -117,7 +120,8 @@ def fetch_series_lookup():
     for item in data.get("items", []):
         name = item.get("fieldData", {}).get("name")
         if name:
-            lookup[name.strip()] = item.get("_id")
+            normalized = normalize(name)
+            lookup[normalized] = item.get("_id")
     print(f"✅ Found {len(lookup)} series options")
     return lookup
 
@@ -165,7 +169,8 @@ def main():
     spreaker_url, episode_id = upload_to_spreaker(audio_path, details["title"], spreaker_desc)
     slug = slugify(details["title"], details["date"])
     series_lookup = fetch_series_lookup()
-    series_id = series_lookup.get(details.get("series", "").strip(), None)
+    normalized_series = normalize(details.get("series", ""))
+    series_id = series_lookup.get(normalized_series, None)
     update_webflow(
         details["title"],
         slug,
