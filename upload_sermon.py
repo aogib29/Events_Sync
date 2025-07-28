@@ -146,7 +146,7 @@ def update_webflow(title, slug, passage, vimeo_url, spreaker_url, episode_id, pr
     print("🌐 Updating Webflow CMS...")
     sermon_date = format_sermon_date(sermon_date_raw)
     embed_code = build_embed_code(title, episode_id)
-    url = f"https://api.webflow.com/v2/collections/{COLLECTION_ID}/items?skipInvalidFiles=true"
+    url = f"https://api.webflow.com/v2/collections/{COLLECTION_ID}/item"
     headers = {
         "Authorization": f"Bearer {WEBFLOW_TOKEN}",
         "Content-Type": "application/json",
