@@ -49,7 +49,7 @@ def get_latest_vimeo_video():
 
 # ---------------- AUDIO EXTRACTION ----------------
 def extract_audio(video_url):
-    print("\ud83c\udfcf Extracting audio...")
+    print("Extracting audio...")
     video_path = "/tmp/temp_video.mp4"
     audio_path = "/tmp/sermon_audio.mp3"
     subprocess.run(["curl", "-L", video_url, "-o", video_path], check=True)
