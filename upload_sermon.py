@@ -3,7 +3,6 @@ import json
 import re
 import requests
 import subprocess
-import time
 from datetime import datetime
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
@@ -76,25 +75,9 @@ def upload_to_spreaker(audio_path, title, description):
     episode_data = resp.json().get("response", {})
     episode_id = episode_data.get("episode_id")
 
-    # Retry logic if episode_id or permalink not immediately available
     if not episode_id:
-        print("🔁 Retrying to fetch episode info from Spreaker...")
-        for i in range(5):
-            time.sleep(3)
-            check_url = f"https://api.spreaker.com/v2/shows/{SPREAKER_SHOW_ID}/episodes"
-            check_resp = requests.get(check_url, headers=headers)
-            check_resp.raise_for_status()
-            episodes = check_resp.json().get("response", {}).get("items", [])
-            if episodes:
-                latest = episodes[0]
-                episode_id = latest.get("episode_id")
-                permalink = latest.get("site_url") or latest.get("permalink_url")
-                if episode_id and permalink:
-                    print(f"✅ Uploaded to Spreaker: {permalink} (episode_id={episode_id})")
-                    return permalink, episode_id
-        raise Exception(f"❌ Failed to retrieve Spreaker episode ID after retrying.")
+        raise Exception(f"❌ Spreaker episode upload succeeded but episode_id not found: {episode_data}")
 
-    # Try to get permalink if not included initially
     episode_url = f"https://api.spreaker.com/v2/episodes/{episode_id}"
     episode_resp = requests.get(episode_url, headers=headers)
     episode_resp.raise_for_status()
