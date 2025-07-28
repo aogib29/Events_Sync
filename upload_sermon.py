@@ -121,9 +121,24 @@ def fetch_series_lookup():
         name = item.get("fieldData", {}).get("name")
         if name:
             normalized = normalize(name)
-            lookup[normalized] = item.get("id") or item.get("_id") or item.get("itemId")
+            lookup[normalized] = item.get("id") or item.get("_id")
     print(f"✅ Found {len(lookup)} series options")
     return lookup
+
+# ---------------- DEBUG FIELD SLUGS ----------------
+def fetch_collection_schema():
+    url = f"https://api.webflow.com/v2/collections/{COLLECTION_ID}"
+    headers = {
+        "Authorization": f"Bearer {WEBFLOW_TOKEN}",
+        "accept-version": "2.0.0"
+    }
+    resp = requests.get(url, headers=headers)
+    resp.raise_for_status()
+    data = resp.json()
+    fields = [f['slug'] for f in data.get('fieldDefinitions', [])]
+    print("🧩 Webflow collection field slugs:")
+    for f in fields:
+        print(f"- {f}")
 
 # ---------------- WEBFLOW ----------------
 def update_webflow(title, slug, passage, vimeo_url, spreaker_url, episode_id, preacher, series_id, sermon_date_raw):
@@ -174,6 +189,7 @@ def main():
     print(f"🔑 Available normalized series keys: {list(series_lookup.keys())}")
     series_id = series_lookup.get(normalized_series, None)
     print(f"📦 Matched series_id: {series_id}")
+    fetch_collection_schema()
     update_webflow(
         details["title"],
         slug,
