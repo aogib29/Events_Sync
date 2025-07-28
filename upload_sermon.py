@@ -73,7 +73,8 @@ def upload_to_spreaker(audio_path, title, description):
     resp = requests.post(url, headers=headers, files=files)
     resp.raise_for_status()
     episode_data = resp.json().get("response", {})
-    episode_id = episode_data.get("episode_id")
+    episode_obj = episode_data.get("episode", {})
+    episode_id = episode_obj.get("episode_id")
 
     if not episode_id:
         raise Exception(f"❌ Spreaker episode upload succeeded but episode_id not found: {episode_data}")
