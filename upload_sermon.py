@@ -6,6 +6,8 @@ import subprocess
 from datetime import datetime
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
+from webflow import Webflow, CollectionItem, CollectionItemFieldData
+
 
 # ---------------- ENV VARS ----------------
 WEBFLOW_TOKEN = os.getenv("WEBFLOW_TOKEN")
@@ -147,45 +149,36 @@ def update_webflow(title, slug, passage, vimeo_url, spreaker_url, episode_id, pr
     sermon_date = format_sermon_date(sermon_date_raw)
     embed_code = build_embed_code(title, episode_id)
 
-    url = f"https://api.webflow.com/v2/collections/{COLLECTION_ID}/items"
-    headers = {
-        "Authorization": f"Bearer {WEBFLOW_TOKEN}",
-        "Content-Type": "application/json",
-        "accept-version": "2.0.0",
-    }
+    client = Webflow(access_token=WEBFLOW_TOKEN)
 
-    valid_slugs = fetch_collection_schema()
-    all_fields = {
-        "sermon-date": sermon_date,
-        "description": passage,
-        "preacher-2": preacher,
-        "series-2": series_id,
-        "embed-code": embed_code,
-        "episode-id": str(episode_id),
-        "video-link": vimeo_url,
-        "name": title,
-        "slug": slug
-    }
-    filtered_fields = {k: v for k, v in all_fields.items() if normalize(k) in valid_slugs}
-
-    data = {
-        "items": [
-            {
-                "fieldData": filtered_fields,
-                "isDraft": False,
-                "isArchived": False
+    item_data = CollectionItem(
+        is_draft=False,
+        is_archived=False,
+        field_data=CollectionItemFieldData(
+            **{
+                "name": title,
+                "slug": slug,
+                "sermon-date": sermon_date,
+                "description": passage,
+                "preacher-2": preacher,
+                "series-2": series_id,
+                "embed-code": embed_code,
+                "episode-id": str(episode_id),
+                "video-link": vimeo_url
             }
-        ]
-    }
+        )
+    )
 
-    print("🔦 Payload to Webflow (filtered):")
-    print(json.dumps(data, indent=2))
+    try:
+        result = client.collections.items.create_item_live(
+            collection_id=COLLECTION_ID,
+            request=item_data
+        )
+        print("✅ Webflow CMS updated:", result)
+    except Exception as e:
+        print("❌ Webflow error:", e)
+        raise
 
-    resp = requests.post(url, headers=headers, json=data)
-    if resp.status_code >= 400:
-        print("❌ Webflow error response:", resp.text)
-    resp.raise_for_status()
-    print("✅ Webflow CMS updated:", resp.json())
 
 # ---------------- MAIN ----------------
 def main():
