@@ -40,5 +40,4 @@ jobs:
 
           # ✅ Webflow API token and collection ID
           WEBFLOW_TOKEN: ${{ secrets.WEBFLOW_TOKEN }}
-          COLLECTION_ID: ${{ secrets.COLLECTION_ID }}
         run: python upload_sermon.py

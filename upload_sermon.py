@@ -9,7 +9,7 @@ from googleapiclient.discovery import build
 
 # ---------------- ENV VARS ----------------
 WEBFLOW_TOKEN = os.getenv("WEBFLOW_TOKEN")
-COLLECTION_ID = os.getenv("COLLECTION_ID")
+COLLECTION_ID = "6671ed65cb61325256e73270"
 SPREAKER_SHOW_ID = "2817602"
 SPREAKER_ACCESS_TOKEN = os.getenv("SPREAKER_ACCESS_TOKEN")
 GOOGLE_SERVICE_JSON = json.loads(os.getenv("GOOGLE_SERVICE_JSON"))
@@ -182,7 +182,7 @@ def update_webflow(title, slug, passage, vimeo_url, spreaker_url, episode_id, pr
     print("🔦 Payload to Webflow (filtered):")
     print(json.dumps(data, indent=2))
 
-    url = f"https://api.webflow.com/v2/collections/{COLLECTION_ID}/items"
+    url = f"https://api.webflow.com/v2/collections/{COLLECTION_ID}/items/live"
     headers = {
         "Authorization": f"Bearer {WEBFLOW_TOKEN}",
         "Content-Type": "application/json",
