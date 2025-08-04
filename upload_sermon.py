@@ -146,7 +146,8 @@ def update_webflow(title, slug, passage, vimeo_url, spreaker_url, episode_id, pr
     print("🌐 Updating Webflow CMS...")
     sermon_date = format_sermon_date(sermon_date_raw)
     embed_code = build_embed_code(title, episode_id)
-    url = f"https://api.webflow.com/v2/collections/{COLLECTION_ID}/item"
+
+    url = f"https://api.webflow.com/v2/collections/{COLLECTION_ID}/items"
     headers = {
         "Authorization": f"Bearer {WEBFLOW_TOKEN}",
         "Content-Type": "application/json",
@@ -168,13 +169,18 @@ def update_webflow(title, slug, passage, vimeo_url, spreaker_url, episode_id, pr
     filtered_fields = {k: v for k, v in all_fields.items() if normalize(k) in valid_slugs}
 
     data = {
-        "fieldData": filtered_fields,
-        "isDraft": False,
-        "isArchived": False
+        "items": [
+            {
+                "fieldData": filtered_fields,
+                "isDraft": False,
+                "isArchived": False
+            }
+        ]
     }
 
     print("🔦 Payload to Webflow (filtered):")
     print(json.dumps(data, indent=2))
+
     resp = requests.post(url, headers=headers, json=data)
     if resp.status_code >= 400:
         print("❌ Webflow error response:", resp.text)
