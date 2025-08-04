@@ -6,8 +6,6 @@ import subprocess
 from datetime import datetime
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
-from webflow import Webflow, CollectionItem, CollectionItemFieldData
-
 
 # ---------------- ENV VARS ----------------
 WEBFLOW_TOKEN = os.getenv("WEBFLOW_TOKEN")
@@ -66,29 +64,30 @@ def extract_audio(video_url):
 def upload_to_spreaker(audio_path, title, description):
     print("⬆️ Uploading audio to Spreaker...")
     headers = {"Authorization": f"Bearer {SPREAKER_ACCESS_TOKEN}"}
-    files = {
-        "media_file": open(audio_path, "rb"),
-        "title": (None, title),
-        "description": (None, description)
-    }
-    url = f"https://api.spreaker.com/v2/shows/{SPREAKER_SHOW_ID}/episodes"
-    resp = requests.post(url, headers=headers, files=files)
-    resp.raise_for_status()
-    episode_data = resp.json().get("response", {})
-    episode_obj = episode_data.get("episode", {})
-    episode_id = episode_obj.get("episode_id")
+    with open(audio_path, "rb") as audio_file:
+        files = {
+            "media_file": audio_file,
+            "title": (None, title),
+            "description": (None, description)
+        }
+        url = f"https://api.spreaker.com/v2/shows/{SPREAKER_SHOW_ID}/episodes"
+        resp = requests.post(url, headers=headers, files=files)
+        resp.raise_for_status()
+        episode_data = resp.json().get("response", {})
+        episode_obj = episode_data.get("episode", {})
+        episode_id = episode_obj.get("episode_id")
 
-    if not episode_id:
-        raise Exception(f"❌ Spreaker episode upload succeeded but episode_id not found: {episode_data}")
+        if not episode_id:
+            raise Exception(f"❌ Spreaker episode upload succeeded but episode_id not found: {episode_data}")
 
-    episode_url = f"https://api.spreaker.com/v2/episodes/{episode_id}"
-    episode_resp = requests.get(episode_url, headers=headers)
-    episode_resp.raise_for_status()
-    episode_info = episode_resp.json().get("response", {})
-    permalink = episode_info.get("site_url") or episode_info.get("permalink_url")
+        episode_url = f"https://api.spreaker.com/v2/episodes/{episode_id}"
+        episode_resp = requests.get(episode_url, headers=headers)
+        episode_resp.raise_for_status()
+        episode_info = episode_resp.json().get("response", {})
+        permalink = episode_info.get("site_url") or episode_info.get("permalink_url")
 
-    print(f"✅ Uploaded to Spreaker: {permalink} (episode_id={episode_id})")
-    return permalink, episode_id
+        print(f"✅ Uploaded to Spreaker: {permalink} (episode_id={episode_id})")
+        return permalink, episode_id
 
 # ---------------- UTILS ----------------
 def slugify(title, date_str):
@@ -127,7 +126,7 @@ def fetch_series_lookup():
     print(f"✅ Found {len(lookup)} series options")
     return lookup
 
-# ---------------- DEBUG FIELD SLUGS ----------------
+# ---------------- WEBFLOW ----------------
 def fetch_collection_schema():
     url = f"https://api.webflow.com/v2/collections/{COLLECTION_ID}"
     headers = {
@@ -137,48 +136,66 @@ def fetch_collection_schema():
     resp = requests.get(url, headers=headers)
     resp.raise_for_status()
     data = resp.json()
-    fields = [f['slug'] for f in data.get('fieldDefinitions', [])]
-    print("🧹 Webflow collection field slugs:")
-    for f in fields:
-        print(f"- {f}")
-    return set(normalize(f) for f in fields)
 
-# ---------------- WEBFLOW ----------------
+    print("🧹 Webflow collection field slugs (raw):")
+    slugs = set()
+    for field in data.get("fields", []):
+        slug = field.get("slug")
+        print(f"- {slug}")
+        slugs.add(slug)
+    return slugs
+
 def update_webflow(title, slug, passage, vimeo_url, spreaker_url, episode_id, preacher, series_id, sermon_date_raw):
     print("🌐 Updating Webflow CMS...")
-    sermon_date = format_sermon_date(sermon_date_raw)
-    embed_code = build_embed_code(title, episode_id)
 
-    client = Webflow(access_token=WEBFLOW_TOKEN)
+    all_fields = {
+        "name": title,
+        "slug": slug,
+        "sermon-date": format_sermon_date(sermon_date_raw),
+        "description": passage,
+        "preacher-2": preacher,
+        "series-2": series_id,
+        "embed-code": build_embed_code(title, episode_id),
+        "episode-id": str(episode_id),
+        "video-link": vimeo_url,
+        # "audio-link": spreaker_url, # Uncomment/add if you want this field and it's in your schema
+    }
 
-    item_data = CollectionItem(
-        is_draft=False,
-        is_archived=False,
-        field_data=CollectionItemFieldData(
-            **{
-                "name": title,
-                "slug": slug,
-                "sermon-date": sermon_date,
-                "description": passage,
-                "preacher-2": preacher,
-                "series-2": series_id,
-                "embed-code": embed_code,
-                "episode-id": str(episode_id),
-                "video-link": vimeo_url
+    valid_slugs = fetch_collection_schema()
+    filtered_fields = {}
+    for k, v in all_fields.items():
+        if k in valid_slugs:
+            filtered_fields[k] = v
+        else:
+            print(f"⚠️ Field skipped: '{k}' not found in schema")
+
+    data = {
+        "items": [
+            {
+                "fieldData": filtered_fields,
+                "isDraft": False,
+                "isArchived": False
             }
-        )
-    )
+        ]
+    }
 
-    try:
-        result = client.collections.items.create_item_live(
-            collection_id=COLLECTION_ID,
-            request=item_data
-        )
-        print("✅ Webflow CMS updated:", result)
-    except Exception as e:
-        print("❌ Webflow error:", e)
-        raise
+    print("🔦 Payload to Webflow (filtered):")
+    print(json.dumps(data, indent=2))
 
+    url = f"https://api.webflow.com/v2/collections/{COLLECTION_ID}/items"
+    headers = {
+        "Authorization": f"Bearer {WEBFLOW_TOKEN}",
+        "Content-Type": "application/json",
+        "accept-version": "2.0.0",
+    }
+
+    resp = requests.post(url, headers=headers, json=data)
+    print("Status:", resp.status_code)
+    print(resp.text)
+    if not resp.ok:
+        raise Exception(f"❌ Webflow error: {resp.status_code} {resp.text}")
+
+    return resp.json()
 
 # ---------------- MAIN ----------------
 def main():

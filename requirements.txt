@@ -9,4 +9,3 @@ google-auth-httplib2
 google-auth-oauthlib
 boxsdk
 boxsdk[jwt]
-webflow==1.2.0
