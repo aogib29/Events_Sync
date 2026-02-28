@@ -123,14 +123,37 @@ def fetch_series_lookup():
     resp = requests.get(url, headers=headers)
     resp.raise_for_status()
     data = resp.json()
-    lookup = {}
+    lookup_id = {}
+    lookup_thumb = {}
+
     for item in data.get("items", []):
-        name = item.get("fieldData", {}).get("name")
-        if name:
-            normalized = normalize(name)
-            lookup[normalized] = item.get("id") or item.get("_id")
-    print(f"✅ Found {len(lookup)} series options")
-    return lookup
+        fd = item.get("fieldData", {}) or {}
+        name = fd.get("name")
+        if not name:
+            continue
+
+        normalized = normalize(name)
+        lookup_id[normalized] = item.get("id") or item.get("_id")
+
+        # TRY these common image slugs on your Series collection:
+        # If your Series collection uses a different field slug, we’ll adjust after one quick print.
+        series_img = (
+            fd.get("thumbnail")
+            or fd.get("thumbnail-image")
+            or fd.get("image")
+            or fd.get("series-image")
+            or fd.get("cover-image")
+        )
+
+        # Webflow image fields can be dicts; handle both str/dict
+        if isinstance(series_img, dict):
+            series_img = series_img.get("url") or series_img.get("src")
+        if isinstance(series_img, str) and series_img.strip():
+            lookup_thumb[normalized] = series_img.strip()
+
+    print(f"✅ Found {len(lookup_id)} series options")
+    print(f"🖼️ Found {len(lookup_thumb)} series thumbnails")
+    return lookup_id, lookup_thumb
 
 def fetch_speakers_lookup():
     """
@@ -215,7 +238,7 @@ def fetch_collection_schema():
         slugs.add(slug)
     return slugs
 
-def update_webflow(title, slug, passage, vimeo_url, spreaker_url, episode_id, preacher, series_id, sermon_date_raw, speaker_id, book):
+def update_webflow(title, slug, passage, vimeo_url, spreaker_url, episode_id, preacher, series_id, sermon_date_raw, speaker_id, book, thumbnail_url):
     print("🌐 Updating Webflow CMS...")
 
     all_fields = {
@@ -227,6 +250,7 @@ def update_webflow(title, slug, passage, vimeo_url, spreaker_url, episode_id, pr
         # NEW: structured fields
         "speaker": speaker_id,
         "bible-book": book,
+        "thumbnail-url": thumbnail_url,
 
         "series-2": series_id,
         "embed-code": build_embed_code(title, episode_id),
@@ -280,7 +304,7 @@ def main():
     spreaker_desc = f"{details['passage']} | {details['preacher']}"
     spreaker_url, episode_id = upload_to_spreaker(audio_path, details["title"], spreaker_desc)
     slug = slugify(details["title"], details["date"])
-    series_lookup = fetch_series_lookup()
+    series_lookup, series_thumb_lookup = fetch_series_lookup()
     speakers_lookup = fetch_speakers_lookup()
     normalized_speaker = normalize(details.get("preacher", ""))
     speaker_id = speakers_lookup.get(normalized_speaker)
@@ -297,6 +321,37 @@ def main():
     print(f"🔍 Normalized series from sheet: '{normalized_series}'")
     print(f"🔑 Available normalized series keys: {list(series_lookup.keys())}")
     series_id = series_lookup.get(normalized_series, None)
+    series_thumb_url = series_thumb_lookup.get(normalized_series)
+    # ---------------- THUMBNAIL PICKER ----------------
+    thumb_mode = (details.get("thumbnail_mode") or "default").strip()
+    custom_thumb = (details.get("thumbnail_url") or "").strip()
+
+    vimeo_thumb_url = None
+    try:
+        # If Vimeo returned a pictures structure, use the largest
+        pics = (vimeo.get("pictures") or {}).get("sizes") or []
+        if pics:
+            vimeo_thumb_url = pics[-1].get("link")
+    except Exception:
+        pass
+
+    # Your default thumbnail url from Lists tab (optional). If you haven't wired it into code yet, leave None.
+    default_thumb_url = None  # we'll wire this later if you want
+
+    thumbnail_url = ""
+    if thumb_mode == "custom_url" and custom_thumb:
+        thumbnail_url = custom_thumb
+    elif thumb_mode == "series_thumbnail" and series_thumb_url:
+        thumbnail_url = series_thumb_url
+    elif thumb_mode == "auto_vimeo" and vimeo_thumb_url:
+        thumbnail_url = vimeo_thumb_url
+    elif thumb_mode == "default":
+        thumbnail_url = ""  # leave empty; Webflow default/conditional handles it
+    else:
+        # fallback: if mode was set but source missing, leave blank
+        thumbnail_url = ""
+
+    print(f"🖼️ thumb_mode={thumb_mode} -> thumbnail_url={thumbnail_url or '(blank)'}")
     print(f"📦 Matched series_id: {series_id}")
     update_webflow(
         details["title"],
@@ -310,6 +365,7 @@ def main():
         details["date"],
         speaker_id,
         details["book"],
+        thumbnail_url
     )
     print("🎉 All done!")
 
