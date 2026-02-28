@@ -1,0 +1,28 @@
+name: Webflow - Migrate Speakers (One-off)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  migrate_speakers:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests
+
+      - name: Migrate preacher text -> Speaker reference
+        env:
+          WEBFLOW_TOKEN: ${{ secrets.WEBFLOW_TOKEN }}
+          SPEAKERS_COLLECTION_ID: ${{ secrets.SPEAKERS_COLLECTION_ID }}
+        run: |
+          python3 migrate_speakers_webflow.py
