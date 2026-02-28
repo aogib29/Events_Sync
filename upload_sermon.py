@@ -10,6 +10,7 @@ from googleapiclient.discovery import build
 # ---------------- ENV VARS ----------------
 WEBFLOW_TOKEN = os.getenv("WEBFLOW_TOKEN")
 COLLECTION_ID = "6671ed65cb61325256e73270"
+SPEAKERS_COLLECTION_ID = "69a336f18b2f1d8207f72087"
 SPREAKER_SHOW_ID = "2817602"
 SPREAKER_ACCESS_TOKEN = os.getenv("SPREAKER_ACCESS_TOKEN")
 GOOGLE_SERVICE_JSON = json.loads(os.getenv("GOOGLE_SERVICE_JSON"))
@@ -21,17 +22,22 @@ def get_sheet_details():
     creds = service_account.Credentials.from_service_account_info(GOOGLE_SERVICE_JSON, scopes=["https://www.googleapis.com/auth/spreadsheets.readonly"])
     service = build('sheets', 'v4', credentials=creds)
     sheet = service.spreadsheets()
-    result = sheet.values().get(spreadsheetId=SHEET_ID, range="A2:E2").execute()
+    result = sheet.values().get(spreadsheetId=SHEET_ID, range="A2:H2").execute()
     values = result.get("values", [])
     if not values:
         raise Exception("No data found in sheet")
     row = values[0]
+    row = row + [""] * (8 - len(row))
+
     return {
         "date": row[0],
         "title": row[1],
         "passage": row[2],
         "preacher": row[3],
-        "series": row[4]
+        "series": row[4],
+        "book": row[5],
+        "thumbnail_mode": row[6],
+        "thumbnail_url": row[7],
     }
 
 # ---------------- VIMEO ----------------
@@ -126,6 +132,70 @@ def fetch_series_lookup():
     print(f"✅ Found {len(lookup)} series options")
     return lookup
 
+def fetch_speakers_lookup():
+    """
+    Returns dict: normalized speaker name -> speaker item id
+    """
+    # You need to set this to your Speakers collection id:
+    # Grab it the same way you did for Series (or from your print collections script).
+
+    if not SPEAKERS_COLLECTION_ID:
+        raise Exception("Missing SPEAKERS_COLLECTION_ID env var")
+
+    url = f"https://api.webflow.com/v2/collections/{SPEAKERS_COLLECTION_ID}/items"
+    headers = {
+        "Authorization": f"Bearer {WEBFLOW_TOKEN}",
+        "accept-version": "2.0.0",
+    }
+
+    print("🔄 Fetching speakers lookup from Webflow...")
+    resp = requests.get(url, headers=headers)
+    resp.raise_for_status()
+    data = resp.json()
+
+    lookup = {}
+    for item in data.get("items", []):
+        name = item.get("fieldData", {}).get("name")
+        if name:
+            lookup[normalize(name)] = item.get("id") or item.get("_id")
+
+    print(f"✅ Found {len(lookup)} speaker options")
+    return lookup
+
+def create_speaker(name: str) -> str:
+    """
+    Create a LIVE Speaker item and return its item id.
+    """
+    url = f"https://api.webflow.com/v2/collections/{SPEAKERS_COLLECTION_ID}/items/live"
+    headers = {
+        "Authorization": f"Bearer {WEBFLOW_TOKEN}",
+        "Content-Type": "application/json",
+        "accept-version": "2.0.0",
+    }
+
+    payload = {
+        "items": [
+            {
+                "fieldData": {
+                    "name": name,
+                    "slug": re.sub(r"[^a-zA-Z0-9]+", "-", name.lower()).strip("-"),
+                },
+                "isDraft": False,
+                "isArchived": False,
+            }
+        ]
+    }
+
+    resp = requests.post(url, headers=headers, json=payload)
+    resp.raise_for_status()
+    data = resp.json()
+
+    items = data.get("items", [])
+    if not items:
+        raise Exception(f"Speaker create returned no items: {data}")
+
+    return items[0].get("id") or items[0].get("_id")
+
 # ---------------- WEBFLOW ----------------
 def fetch_collection_schema():
     url = f"https://api.webflow.com/v2/collections/{COLLECTION_ID}"
@@ -145,7 +215,7 @@ def fetch_collection_schema():
         slugs.add(slug)
     return slugs
 
-def update_webflow(title, slug, passage, vimeo_url, spreaker_url, episode_id, preacher, series_id, sermon_date_raw):
+def update_webflow(title, slug, passage, vimeo_url, spreaker_url, episode_id, preacher, series_id, sermon_date_raw, speaker_id, book):
     print("🌐 Updating Webflow CMS...")
 
     all_fields = {
@@ -153,7 +223,11 @@ def update_webflow(title, slug, passage, vimeo_url, spreaker_url, episode_id, pr
         "slug": slug,
         "sermon-date": format_sermon_date(sermon_date_raw),
         "description": passage,
-        "preacher-2": preacher,
+        "preacher-2": preacher, 
+        # NEW: structured fields
+        "speaker": speaker_id,
+        "bible-book": book,
+
         "series-2": series_id,
         "embed-code": build_embed_code(title, episode_id),
         "episode-id": str(episode_id),
@@ -207,6 +281,18 @@ def main():
     spreaker_url, episode_id = upload_to_spreaker(audio_path, details["title"], spreaker_desc)
     slug = slugify(details["title"], details["date"])
     series_lookup = fetch_series_lookup()
+    speakers_lookup = fetch_speakers_lookup()
+    normalized_speaker = normalize(details.get("preacher", ""))
+    speaker_id = speakers_lookup.get(normalized_speaker)
+
+    if not speaker_id and details.get("preacher"):
+        print(f"➕ Speaker not found. Creating new Speaker: {details['preacher']}")
+        speaker_id = create_speaker(details["preacher"])
+        speakers_lookup[normalized_speaker] = speaker_id  # cache it
+
+    print(f"📦 Matched speaker_id: {speaker_id}")
+
+    print(f"📦 Matched speaker_id: {speaker_id}")
     normalized_series = normalize(details.get("series", ""))
     print(f"🔍 Normalized series from sheet: '{normalized_series}'")
     print(f"🔑 Available normalized series keys: {list(series_lookup.keys())}")
@@ -221,7 +307,9 @@ def main():
         episode_id,
         details["preacher"],
         series_id,
-        details["date"]
+        details["date"],
+        speaker_id,
+        details["book"],
     )
     print("🎉 All done!")
 
