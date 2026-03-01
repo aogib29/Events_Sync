@@ -1,0 +1,31 @@
+name: Webflow - Backfill Bible Book (One-off)
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "1 = print only, 0 = write changes"
+        required: true
+        default: "0"
+
+jobs:
+  backfill_bible_book:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests
+
+      - name: Backfill bible-book from passage
+        env:
+          WEBFLOW_TOKEN: ${{ secrets.WEBFLOW_TOKEN }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          python3 backfill_bible_book_webflow.py
