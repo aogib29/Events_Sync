@@ -2,7 +2,7 @@ import os
 import json
 import re
 import requests
-from datetime import datetime
+from datetime import datetime, timedelta
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 
@@ -67,17 +67,37 @@ def write_webflow_item_id_to_sheet(item_id: str):
 
 # ---------------- UTILS ----------------
 def slugify(title, date_str):
-    slug_title = re.sub(r"[^a-zA-Z0-9]+", "-", title.lower()).strip("-")
-    dt = datetime.strptime(date_str, "%Y-%m-%d") if "-" in date_str else datetime.strptime(date_str, "%m/%d/%Y")
-    return f"{slug_title}-{dt.strftime('%Y-%m-%d')}"
+    title = (title or "").strip() or "Upcoming Sermon"
+    date_str = (date_str or "").strip()
 
+    if date_str:
+        dt = datetime.strptime(date_str, "%Y-%m-%d") if "-" in date_str else datetime.strptime(date_str, "%m/%d/%Y")
+    else:
+        today = datetime.now()
+        days_until_sunday = (6 - today.weekday()) % 7
+        if days_until_sunday == 0:
+            days_until_sunday = 7
+        dt = today + timedelta(days=days_until_sunday)
+
+    slug_title = re.sub(r"[^a-zA-Z0-9]+", "-", title.lower()).strip("-")
+    return f"{slug_title}-{dt.strftime('%Y-%m-%d')}"
 
 def normalize(value):
     return re.sub(r"\s+", " ", (value or "").strip().lower())
 
 
 def format_sermon_date(date_str):
-    dt = datetime.strptime(date_str, "%Y-%m-%d") if "-" in date_str else datetime.strptime(date_str, "%m/%d/%Y")
+    date_str = (date_str or "").strip()
+
+    if date_str:
+        dt = datetime.strptime(date_str, "%Y-%m-%d") if "-" in date_str else datetime.strptime(date_str, "%m/%d/%Y")
+    else:
+        today = datetime.now()
+        days_until_sunday = (6 - today.weekday()) % 7
+        if days_until_sunday == 0:
+            days_until_sunday = 7
+        dt = today + timedelta(days=days_until_sunday)
+
     return dt.strftime("%Y-%m-%dT12:00:00.000Z")
 
 
@@ -189,15 +209,17 @@ def build_webflow_field_data(
     book,
     thumbnail_url,
 ):
+    safe_title = (title or "").strip() or "Upcoming Sermon"
+
     all_fields = {
-        "name": title,
+        "name": safe_title,
         "slug": slug,
         "sermon-date": format_sermon_date(sermon_date_raw),
-        "description": passage,
-        "preacher-2": preacher,
+        "description": (passage or "").strip() or None,
+        "preacher-2": (preacher or "").strip() or None,
         "speaker": speaker_id,
-        "bible-book": book,
-        "thumbnail-url": thumbnail_url,
+        "bible-book": (book or "").strip() or None,
+        "thumbnail-url": (thumbnail_url or "").strip() or None,
         "series-2": series_id,
     }
 
@@ -211,7 +233,6 @@ def build_webflow_field_data(
             print(f"⚠️ Field skipped: '{k}' not found in schema")
 
     return filtered_fields
-
 
 def create_webflow_item_live(field_data):
     print("🌐 Creating NEW live Webflow sermon item...")
