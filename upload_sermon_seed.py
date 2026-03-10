@@ -235,13 +235,13 @@ def build_webflow_field_data(
     return filtered_fields
 
 def create_webflow_item_live(field_data):
-    print("🌐 Creating NEW live Webflow sermon item...")
+    print("🌐 Creating NEW UNPUBLISHED Webflow sermon item...")
 
     data = {
         "items": [
             {
                 "fieldData": field_data,
-                "isDraft": False,
+                "isDraft": True,
                 "isArchived": False,
             }
         ]
@@ -250,7 +250,7 @@ def create_webflow_item_live(field_data):
     print("🔦 Create payload to Webflow:")
     print(json.dumps(data, indent=2))
 
-    url = f"https://api.webflow.com/v2/collections/{COLLECTION_ID}/items/live"
+    url = f"https://api.webflow.com/v2/collections/{COLLECTION_ID}/items"
     headers = {
         "Authorization": f"Bearer {WEBFLOW_TOKEN}",
         "Content-Type": "application/json",
@@ -277,14 +277,14 @@ def create_webflow_item_live(field_data):
 
 
 def update_webflow_item_live(item_id, field_data):
-    print(f"🌐 Updating EXISTING live Webflow sermon item: {item_id}")
+    print(f"🌐 Updating EXISTING UNPUBLISHED Webflow sermon item: {item_id}")
 
     data = {
         "items": [
             {
                 "id": item_id,
                 "fieldData": field_data,
-                "isDraft": False,
+                "isDraft": True,
                 "isArchived": False,
             }
         ]
@@ -293,7 +293,7 @@ def update_webflow_item_live(item_id, field_data):
     print("🔦 Update payload to Webflow:")
     print(json.dumps(data, indent=2))
 
-    url = f"https://api.webflow.com/v2/collections/{COLLECTION_ID}/items/live"
+    url = f"https://api.webflow.com/v2/collections/{COLLECTION_ID}/items"
     headers = {
         "Authorization": f"Bearer {WEBFLOW_TOKEN}",
         "Content-Type": "application/json",
