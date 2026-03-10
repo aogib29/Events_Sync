@@ -139,7 +139,7 @@ def fetch_speakers_lookup():
 
 
 def fetch_series_lookup():
-    url = "https://api.webflow.com/v2/collections/686d9f8060fb26d4840bc28c/items"
+    url = "https://api.webflow.com/v2/collections/6671ee53d920cd99f7d8463f/items"
     headers = {
         "Authorization": f"Bearer {WEBFLOW_TOKEN}",
         "accept-version": "2.0.0",
