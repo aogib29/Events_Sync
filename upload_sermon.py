@@ -19,15 +19,19 @@ VIMEO_ACCESS_TOKEN = os.getenv("VIMEO_ACCESS_TOKEN")
 
 # ---------------- GOOGLE SHEET ----------------
 def get_sheet_details():
-    creds = service_account.Credentials.from_service_account_info(GOOGLE_SERVICE_JSON, scopes=["https://www.googleapis.com/auth/spreadsheets.readonly"])
-    service = build('sheets', 'v4', credentials=creds)
+    creds = service_account.Credentials.from_service_account_info(
+        GOOGLE_SERVICE_JSON,
+        scopes=["https://www.googleapis.com/auth/spreadsheets.readonly"]
+    )
+    service = build("sheets", "v4", credentials=creds)
     sheet = service.spreadsheets()
-    result = sheet.values().get(spreadsheetId=SHEET_ID, range="A2:H2").execute()
+    result = sheet.values().get(spreadsheetId=SHEET_ID, range="A2:I2").execute()
     values = result.get("values", [])
     if not values:
         raise Exception("No data found in sheet")
+
     row = values[0]
-    row = row + [""] * (8 - len(row))
+    row = row + [""] * (9 - len(row))
 
     return {
         "date": row[0],
@@ -38,7 +42,32 @@ def get_sheet_details():
         "book": row[5],
         "thumbnail_mode": row[6],
         "thumbnail_url": row[7],
+        "webflow_item_id": row[8].strip(),
     }
+
+def write_webflow_item_id_to_sheet(item_id: str):
+    if not item_id:
+        return
+
+    creds = service_account.Credentials.from_service_account_info(
+        GOOGLE_SERVICE_JSON,
+        scopes=["https://www.googleapis.com/auth/spreadsheets"]
+    )
+    service = build("sheets", "v4", credentials=creds)
+    sheet = service.spreadsheets()
+
+    body = {
+        "values": [[item_id]]
+    }
+
+    sheet.values().update(
+        spreadsheetId=SHEET_ID,
+        range="I2",
+        valueInputOption="RAW",
+        body=body
+    ).execute()
+
+    print(f"📝 Wrote webflow_item_id to sheet: {item_id}")
 
 # ---------------- VIMEO ----------------
 def get_latest_vimeo_video():
@@ -238,8 +267,160 @@ def fetch_collection_schema():
         slugs.add(slug)
     return slugs
 
-def update_webflow(title, slug, passage, vimeo_url, spreaker_url, episode_id, preacher, series_id, sermon_date_raw, speaker_id, book, thumbnail_url):
-    print("🌐 Updating Webflow CMS...")
+def build_webflow_field_data(
+    title,
+    slug,
+    passage,
+    vimeo_url,
+    spreaker_url,
+    episode_id,
+    preacher,
+    series_id,
+    sermon_date_raw,
+    speaker_id,
+    book,
+    thumbnail_url,
+):
+    all_fields = {
+        "name": title,
+        "slug": slug,
+        "sermon-date": format_sermon_date(sermon_date_raw),
+        "description": passage,
+        "preacher-2": preacher,
+        "speaker": speaker_id,
+        "bible-book": book,
+        "thumbnail-url": thumbnail_url,
+        "series-2": series_id,
+        "embed-code": build_embed_code(title, episode_id),
+        "episode-id": str(episode_id) if episode_id else None,
+        "video-link": vimeo_url,
+        # "audio-link": spreaker_url,  # Uncomment if you add/use this field
+    }
+
+    valid_slugs = fetch_collection_schema()
+    filtered_fields = {}
+
+    for k, v in all_fields.items():
+        if k in valid_slugs and v not in (None, ""):
+            filtered_fields[k] = v
+        elif k not in valid_slugs:
+            print(f"⚠️ Field skipped: '{k}' not found in schema")
+
+    return filtered_fields
+
+
+def create_webflow_item_live(field_data):
+    print("🌐 Creating NEW live Webflow sermon item...")
+
+    data = {
+        "items": [
+            {
+                "fieldData": field_data,
+                "isDraft": False,
+                "isArchived": False,
+            }
+        ]
+    }
+
+    print("🔦 Create payload to Webflow:")
+    print(json.dumps(data, indent=2))
+
+    url = f"https://api.webflow.com/v2/collections/{COLLECTION_ID}/items/live"
+    headers = {
+        "Authorization": f"Bearer {WEBFLOW_TOKEN}",
+        "Content-Type": "application/json",
+        "accept-version": "2.0.0",
+    }
+
+    resp = requests.post(url, headers=headers, json=data)
+    print("Status:", resp.status_code)
+    print(resp.text)
+
+    if not resp.ok:
+        raise Exception(f"❌ Webflow create error: {resp.status_code} {resp.text}")
+
+    result = resp.json()
+    items = result.get("items", [])
+    if not items:
+        raise Exception(f"❌ Webflow create returned no items: {result}")
+
+    created_id = items[0].get("id") or items[0].get("_id")
+    if not created_id:
+        raise Exception(f"❌ Webflow create returned item without id: {result}")
+
+    return result, created_id
+
+
+def update_webflow_item_live(item_id, field_data):
+    print(f"🌐 Updating EXISTING live Webflow sermon item: {item_id}")
+
+    data = {
+        "items": [
+            {
+                "id": item_id,
+                "fieldData": field_data,
+                "isDraft": False,
+                "isArchived": False,
+            }
+        ]
+    }
+
+    print("🔦 Update payload to Webflow:")
+    print(json.dumps(data, indent=2))
+
+    url = f"https://api.webflow.com/v2/collections/{COLLECTION_ID}/items/live"
+    headers = {
+        "Authorization": f"Bearer {WEBFLOW_TOKEN}",
+        "Content-Type": "application/json",
+        "accept-version": "2.0.0",
+    }
+
+    resp = requests.patch(url, headers=headers, json=data)
+    print("Status:", resp.status_code)
+    print(resp.text)
+
+    if not resp.ok:
+        raise Exception(f"❌ Webflow update error: {resp.status_code} {resp.text}")
+
+    return resp.json()
+
+
+def upsert_webflow_by_sheet_id(
+    webflow_item_id,
+    title,
+    slug,
+    passage,
+    vimeo_url,
+    spreaker_url,
+    episode_id,
+    preacher,
+    series_id,
+    sermon_date_raw,
+    speaker_id,
+    book,
+    thumbnail_url,
+):
+    field_data = build_webflow_field_data(
+        title=title,
+        slug=slug,
+        passage=passage,
+        vimeo_url=vimeo_url,
+        spreaker_url=spreaker_url,
+        episode_id=episode_id,
+        preacher=preacher,
+        series_id=series_id,
+        sermon_date_raw=sermon_date_raw,
+        speaker_id=speaker_id,
+        book=book,
+        thumbnail_url=thumbnail_url,
+    )
+
+    if webflow_item_id:
+        return update_webflow_item_live(webflow_item_id, field_data), webflow_item_id
+
+    result, created_id = create_webflow_item_live(field_data)
+    write_webflow_item_id_to_sheet(created_id)
+    return result, created_id
 
     all_fields = {
         "name": title,
@@ -353,7 +534,8 @@ def main():
 
     print(f"🖼️ thumb_mode={thumb_mode} -> thumbnail_url={thumbnail_url or '(blank)'}")
     print(f"📦 Matched series_id: {series_id}")
-    update_webflow(
+    webflow_result, final_webflow_item_id = upsert_webflow_by_sheet_id(
+        details.get("webflow_item_id", ""),
         details["title"],
         slug,
         details["passage"],
@@ -365,9 +547,10 @@ def main():
         details["date"],
         speaker_id,
         details["book"],
-        thumbnail_url
+        thumbnail_url,
     )
-    print("🎉 All done!")
+
+    print(f"✅ Final Webflow item id: {final_webflow_item_id}")
 
 if __name__ == "__main__":
     main()
