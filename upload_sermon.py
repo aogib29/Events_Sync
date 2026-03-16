@@ -309,8 +309,8 @@ def build_webflow_field_data(
     return filtered_fields
 
 
-def create_webflow_item_live(field_data):
-    print("🌐 Creating NEW live Webflow sermon item...")
+def create_webflow_item_published(field_data):
+    print("🌐 Creating NEW published Webflow sermon item...")
 
     data = {
         "items": [
@@ -351,8 +351,8 @@ def create_webflow_item_live(field_data):
     return result, created_id
 
 
-def update_webflow_item_live(item_id, field_data):
-    print(f"🌐 Updating EXISTING live Webflow sermon item: {item_id}")
+def update_webflow_item_unpublished(item_id, field_data):
+    print(f"🌐 Updating EXISTING unpublished Webflow sermon item: {item_id}")
 
     data = {
         "items": [
@@ -365,10 +365,10 @@ def update_webflow_item_live(item_id, field_data):
         ]
     }
 
-    print("🔦 Update payload to Webflow:")
+    print("🔦 Unpublished update payload to Webflow:")
     print(json.dumps(data, indent=2))
 
-    url = f"https://api.webflow.com/v2/collections/{COLLECTION_ID}/items/live"
+    url = f"https://api.webflow.com/v2/collections/{COLLECTION_ID}/items"
     headers = {
         "Authorization": f"Bearer {WEBFLOW_TOKEN}",
         "Content-Type": "application/json",
@@ -380,7 +380,30 @@ def update_webflow_item_live(item_id, field_data):
     print(resp.text)
 
     if not resp.ok:
-        raise Exception(f"❌ Webflow update error: {resp.status_code} {resp.text}")
+        raise Exception(f"❌ Webflow unpublished update error: {resp.status_code} {resp.text}")
+
+    return resp.json()
+
+def publish_webflow_item(item_id):
+    print(f"🚀 Publishing Webflow sermon item: {item_id}")
+
+    data = {
+        "itemIds": [item_id]
+    }
+
+    url = f"https://api.webflow.com/v2/collections/{COLLECTION_ID}/items/publish"
+    headers = {
+        "Authorization": f"Bearer {WEBFLOW_TOKEN}",
+        "Content-Type": "application/json",
+        "accept-version": "2.0.0",
+    }
+
+    resp = requests.post(url, headers=headers, json=data)
+    print("Status:", resp.status_code)
+    print(resp.text)
+
+    if not resp.ok:
+        raise Exception(f"❌ Webflow publish error: {resp.status_code} {resp.text}")
 
     return resp.json()
 
@@ -416,65 +439,13 @@ def upsert_webflow_by_sheet_id(
     )
 
     if webflow_item_id:
-        return update_webflow_item_live(webflow_item_id, field_data), webflow_item_id
+        update_webflow_item_unpublished(webflow_item_id, field_data)
+        publish_result = publish_webflow_item(webflow_item_id)
+        return publish_result, webflow_item_id
 
-    result, created_id = create_webflow_item_live(field_data)
+    result, created_id = create_webflow_item_published(field_data)
     write_webflow_item_id_to_sheet(created_id)
     return result, created_id
-
-    all_fields = {
-        "name": title,
-        "slug": slug,
-        "sermon-date": format_sermon_date(sermon_date_raw),
-        "description": passage,
-        "preacher-2": preacher, 
-        # NEW: structured fields
-        "speaker": speaker_id,
-        "bible-book": book,
-        "thumbnail-url": thumbnail_url,
-
-        "series-2": series_id,
-        "embed-code": build_embed_code(title, episode_id),
-        "episode-id": str(episode_id),
-        "video-link": vimeo_url,
-        # "audio-link": spreaker_url, # Uncomment/add if you want this field and it's in your schema
-    }
-
-    valid_slugs = fetch_collection_schema()
-    filtered_fields = {}
-    for k, v in all_fields.items():
-        if k in valid_slugs:
-            filtered_fields[k] = v
-        else:
-            print(f"⚠️ Field skipped: '{k}' not found in schema")
-
-    data = {
-        "items": [
-            {
-                "fieldData": filtered_fields,
-                "isDraft": False,
-                "isArchived": False
-            }
-        ]
-    }
-
-    print("🔦 Payload to Webflow (filtered):")
-    print(json.dumps(data, indent=2))
-
-    url = f"https://api.webflow.com/v2/collections/{COLLECTION_ID}/items/live"
-    headers = {
-        "Authorization": f"Bearer {WEBFLOW_TOKEN}",
-        "Content-Type": "application/json",
-        "accept-version": "2.0.0",
-    }
-
-    resp = requests.post(url, headers=headers, json=data)
-    print("Status:", resp.status_code)
-    print(resp.text)
-    if not resp.ok:
-        raise Exception(f"❌ Webflow error: {resp.status_code} {resp.text}")
-
-    return resp.json()
 
 # ---------------- MAIN ----------------
 def main():
