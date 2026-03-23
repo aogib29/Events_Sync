@@ -16,6 +16,8 @@ SPREAKER_ACCESS_TOKEN = os.getenv("SPREAKER_ACCESS_TOKEN")
 GOOGLE_SERVICE_JSON = json.loads(os.getenv("GOOGLE_SERVICE_JSON"))
 SHEET_ID = "1TSlHLDGO0Dn8G0jN8Ji7lmsUc2JxxLUVTvTZfdIHAdA"
 VIMEO_ACCESS_TOKEN = os.getenv("VIMEO_ACCESS_TOKEN")
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 
 # ---------------- GOOGLE SHEET ----------------
 def get_sheet_details():
@@ -140,6 +142,40 @@ def format_sermon_date(raw_date):
 
 def normalize(text):
     return re.sub(r'[^a-zA-Z0-9]+', '', text).lower().strip()
+
+def create_sermon_uploaded_announcement(title: str, webflow_item_id: str):
+    if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
+        print("ℹ️ Supabase announcement env vars missing; skipping sermon announcement")
+        return
+
+    route = f"/sermons/{webflow_item_id}" if webflow_item_id else "/watch"
+
+    payload = {
+        "title": "New sermon available",
+        "body": f"{title} is now ready to watch and review.",
+        "kind": "sermon_uploaded",
+        "route": route,
+        "audience_type": "all",
+        "send_push": True,
+        "published_at": datetime.utcnow().isoformat() + "Z",
+        "created_by_person_id": None,
+    }
+
+    resp = requests.post(
+        f"{SUPABASE_URL}/rest/v1/announcements",
+        headers={
+            "apikey": SUPABASE_SERVICE_ROLE_KEY,
+            "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
+            "Content-Type": "application/json",
+            "Prefer": "return=representation",
+        },
+        json=payload,
+    )
+
+    if not resp.ok:
+        raise Exception(f"❌ Failed to create sermon announcement: {resp.status_code} {resp.text}")
+
+    print("📣 Created sermon_uploaded announcement")
 
 # ---------------- FETCH SERIES ----------------
 def fetch_series_lookup():
@@ -522,6 +558,11 @@ def main():
     )
 
     print(f"✅ Final Webflow item id: {final_webflow_item_id}")
+
+create_sermon_uploaded_announcement(
+    title=details["title"],
+    webflow_item_id=final_webflow_item_id,
+)
 
 if __name__ == "__main__":
     main()
