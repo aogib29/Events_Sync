@@ -39,6 +39,11 @@ SECTION_NAME_TO_TOKEN = {
     "end": "E",
 }
 
+def response_data(response):
+    if response is None:
+        return None
+    return getattr(response, "data", None)
+
 
 def slugify(value: str) -> str:
     value = value.lower().replace("&", " and ")
@@ -298,13 +303,14 @@ def extract_sections(text: str, title: str) -> List[Dict]:
 
 
 def upsert_song(meta: Dict) -> str:
-    existing = (
+    existing_resp = (
         supabase.table("songs")
         .select("id")
         .eq("slug", meta["slug"])
         .maybe_single()
         .execute()
     )
+    existing = response_data(existing_resp)
 
     payload = {
         "title": meta["title"],
@@ -314,22 +320,22 @@ def upsert_song(meta: Dict) -> str:
         "time_signature": meta["time_signature"],
     }
 
-    if existing.data:
-        updated = (
+    if existing:
+        (
             supabase.table("songs")
             .update(payload)
-            .eq("id", existing.data["id"])
+            .eq("id", existing["id"])
             .execute()
         )
-        if not updated.data:
-            raise RuntimeError(f"Failed to update song: {meta['title']}")
-        return existing.data["id"]
+        return existing["id"]
 
-    inserted = supabase.table("songs").insert(payload).execute()
-    if not inserted.data:
+    inserted_resp = supabase.table("songs").insert(payload).execute()
+    inserted = response_data(inserted_resp)
+
+    if not inserted:
         raise RuntimeError(f"Failed to insert song: {meta['title']}")
-    return inserted.data[0]["id"]
 
+    return inserted[0]["id"]
 
 def replace_song_sections(song_id: str, original_key: str, sections: List[Dict]) -> List[Dict]:
     supabase.table("song_sections").delete().eq("song_id", song_id).execute()
@@ -347,17 +353,19 @@ def replace_song_sections(song_id: str, original_key: str, sections: List[Dict])
         for section in sections
     ]
 
-    inserted = supabase.table("song_sections").insert(payload).execute()
-    if not inserted.data:
+    inserted_resp = supabase.table("song_sections").insert(payload).execute()
+    inserted = response_data(inserted_resp)
+
+    if not inserted:
         raise RuntimeError("Failed to insert song_sections")
 
-    return sorted(inserted.data, key=lambda x: x["section_order"])
+    return sorted(inserted, key=lambda x: x["section_order"])
 
 
 def upsert_default_chart_plan(song_id: str, title: str, default_key: str) -> str:
     plan_title = f"{title} - Default"
 
-    existing = (
+    existing_resp = (
         supabase.table("chart_plans")
         .select("id")
         .eq("song_id", song_id)
@@ -366,6 +374,7 @@ def upsert_default_chart_plan(song_id: str, title: str, default_key: str) -> str
         .maybe_single()
         .execute()
     )
+    existing = response_data(existing_resp)
 
     payload = {
         "title": plan_title,
@@ -374,21 +383,22 @@ def upsert_default_chart_plan(song_id: str, title: str, default_key: str) -> str
         "default_key": default_key,
     }
 
-    if existing.data:
-        updated = (
+    if existing:
+        (
             supabase.table("chart_plans")
             .update({"default_key": default_key})
-            .eq("id", existing.data["id"])
+            .eq("id", existing["id"])
             .execute()
         )
-        if not updated.data:
-            raise RuntimeError(f"Failed to update chart_plan: {plan_title}")
-        return existing.data["id"]
+        return existing["id"]
 
-    inserted = supabase.table("chart_plans").insert(payload).execute()
-    if not inserted.data:
+    inserted_resp = supabase.table("chart_plans").insert(payload).execute()
+    inserted = response_data(inserted_resp)
+
+    if not inserted:
         raise RuntimeError(f"Failed to insert chart_plan: {plan_title}")
-    return inserted.data[0]["id"]
+
+    return inserted[0]["id"]
 
 
 def replace_chart_plan_items(
@@ -435,10 +445,11 @@ def replace_chart_plan_items(
     if not items:
         raise RuntimeError("No chart_plan_items were created")
 
-    inserted = supabase.table("chart_plan_items").insert(items).execute()
-    if not inserted.data:
-        raise RuntimeError("Failed to insert chart_plan_items")
+    inserted_resp = supabase.table("chart_plan_items").insert(items).execute()
+    inserted = response_data(inserted_resp)
 
+    if inserted is None:
+        raise RuntimeError("Failed to insert chart_plan_items")
 
 def import_pdf(filepath: Path) -> None:
     text = extract_pdf_text(filepath)
