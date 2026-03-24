@@ -9,3 +9,5 @@ google-auth-httplib2
 google-auth-oauthlib
 boxsdk
 boxsdk[jwt]
+pypdf
+python-dotenv
