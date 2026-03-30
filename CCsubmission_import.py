@@ -2,6 +2,7 @@ import os
 import time
 import uuid
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from typing import Any, Dict, Optional
 
 import requests
@@ -15,7 +16,6 @@ from supabase import create_client, Client
 FORM_ID = "167650"
 PER_PAGE = 50
 MAX_PAGES = 10
-LOOKBACK_HOURS = 36
 REQUEST_TIMEOUT = 30
 
 PCO_APP_ID = os.environ["PCO_APP_ID"]
@@ -165,10 +165,25 @@ def upsert_submission(
 # MAIN
 # -----------------------------
 def main() -> None:
-    cutoff = datetime.now(timezone.utc) - timedelta(hours=LOOKBACK_HOURS)
+    chicago_tz = ZoneInfo("America/Chicago")
+    now_local = datetime.now(chicago_tz)
+
+    days_since_sunday = (now_local.weekday() + 1) % 7
+    last_sunday_local = (now_local - timedelta(days=days_since_sunday)).replace(
+        hour=15,
+        minute=0,
+        second=0,
+        microsecond=0,
+    )
+
+    # If it's Sunday before 3 PM local, use the previous Sunday at 3 PM.
+    if now_local.weekday() == 6 and now_local < last_sunday_local:
+        last_sunday_local = last_sunday_local - timedelta(days=7)
+
+    cutoff = last_sunday_local.astimezone(timezone.utc)
 
     print(f"Starting connection card sync for the most recent {MAX_PAGES} pages...")
-    print(f"Rolling lookback cutoff: {cutoff.isoformat()}")
+    print(f"Last Sunday 3 PM Chicago cutoff: {last_sunday_local.isoformat()} | UTC: {cutoff.isoformat()}")
 
     base_url = f"https://api.planningcenteronline.com/people/v2/forms/{FORM_ID}/form_submissions"
     people_cache: Dict[str, Optional[str]] = {}
@@ -249,7 +264,7 @@ def main() -> None:
             time.sleep(0.05)
 
         if not page_had_recent_rows:
-            print(f"Stopping early: page {page_num} is entirely older than the rolling cutoff.")
+            print(f"Stopping early: page {page_num} is entirely older than the cutoff.")
             break
 
         time.sleep(0.2)
