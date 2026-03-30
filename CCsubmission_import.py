@@ -1,194 +1,226 @@
+import os
+import time
+import uuid
+from typing import Any, Dict, Optional
+
 import requests
 from requests.auth import HTTPBasicAuth
-from datetime import datetime
 from supabase import create_client, Client
-from tqdm import tqdm
-import uuid
-import time
-
-import os
 
 
-# --- CONFIGURATION ---
-FORM_ID = '167650'
+# -----------------------------
+# CONFIG
+# -----------------------------
+FORM_ID = "167650"
+PER_PAGE = 50
+MAX_PAGES = 10  # only the 10 most recent pages
+
 PCO_APP_ID = os.environ["PCO_APP_ID"]
 PCO_SECRET = os.environ["PCO_SECRET"]
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_SERVICE_ROLE_KEY = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
-PER_PAGE = 50
-START_PAGE = 0  # <-- New! Start from page 100 after failure
-MAX_PAGES = 10  # Pull full 581 pages!
 
 
-## --- SETUP CONNECTIONS ---
+# -----------------------------
+# SETUP
+# -----------------------------
 auth = HTTPBasicAuth(PCO_APP_ID, PCO_SECRET)
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
-log_file = open("import_log.txt", "a")
 
-# --- HELPERS ---
-def map_person(person_info):
+
+# -----------------------------
+# HELPERS
+# -----------------------------
+def map_person(person_id: str, person_info: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "id": str(uuid.uuid4()),
-        "planning_center_id": person_info.get('id'),
-        "first_name": person_info.get('first_name', ''),
-        "last_name": person_info.get('last_name', ''),
-        "full_name": person_info.get('name', ''),
-        "email": person_info.get('login_identifier'),
-        "gender": person_info.get('gender'),
-        "membership_status": person_info.get('membership'),
-        "avatar_url": person_info.get('avatar'),
-        "directory_status": person_info.get('directory_status'),
-        "status": person_info.get('status'),
-        "created_at": person_info.get('created_at'),
-        "updated_at": person_info.get('updated_at')
+        "planning_center_id": person_id,
+        "first_name": person_info.get("first_name", ""),
+        "last_name": person_info.get("last_name", ""),
+        "full_name": person_info.get("name", ""),
+        "email": person_info.get("login_identifier"),
+        "gender": person_info.get("gender"),
+        "membership_status": person_info.get("membership"),
+        "avatar_url": person_info.get("avatar"),
+        "directory_status": person_info.get("directory_status"),
+        "status": person_info.get("status"),
+        "created_at": person_info.get("created_at"),
+        "updated_at": person_info.get("updated_at"),
     }
 
-def map_submission(submission_id, person_id, answers, created_at_str):
-    return {
+
+def fetch_submission_values(submission_id: str) -> Dict[str, Any]:
+    url = (
+        f"https://api.planningcenteronline.com/people/v2/forms/"
+        f"{FORM_ID}/form_submissions/{submission_id}/form_submission_values"
+    )
+    response = requests.get(url, auth=auth, timeout=30)
+    response.raise_for_status()
+    payload = response.json()
+
+    answers: Dict[str, Any] = {
+        "submission_date": None,
+        "service_time": None,
+        "attendance_status": None,
+        "welcome_note": None,
+        "prayer_request": None,
+        "phone_number": None,
+    }
+
+    for value in payload.get("data", []):
+        field_rel = value.get("relationships", {}).get("form_field", {}).get("data", {})
+        field_id = field_rel.get("id")
+        display_value = value.get("attributes", {}).get("display_value", "")
+
+        if field_id == "1128354":
+            answers["submission_date"] = display_value
+        elif field_id == "1128358":
+            answers["service_time"] = display_value
+        elif field_id == "1128356":
+            answers["attendance_status"] = display_value
+        elif field_id == "1128357":
+            answers["welcome_note"] = display_value
+        elif field_id == "1128355":
+            answers["prayer_request"] = display_value
+        elif field_id == "1128353":
+            answers["phone_number"] = display_value
+
+    return answers
+
+
+def find_or_create_person(
+    person_id_ref: Optional[str],
+    people_lookup: Dict[str, Dict[str, Any]],
+    people_cache: Dict[str, Optional[str]],
+) -> Optional[str]:
+    if not person_id_ref:
+        return None
+
+    if person_id_ref in people_cache:
+        return people_cache[person_id_ref]
+
+    existing = (
+        supabase.table("people")
+        .select("id")
+        .eq("planning_center_id", person_id_ref)
+        .limit(1)
+        .execute()
+    )
+
+    if existing.data:
+        person_uuid = existing.data[0]["id"]
+        people_cache[person_id_ref] = person_uuid
+        return person_uuid
+
+    person_info = people_lookup.get(person_id_ref)
+    if not person_info:
+        people_cache[person_id_ref] = None
+        return None
+
+    new_person = map_person(person_id_ref, person_info)
+    inserted = supabase.table("people").insert(new_person).execute()
+    person_uuid = inserted.data[0]["id"]
+
+    people_cache[person_id_ref] = person_uuid
+    return person_uuid
+
+
+def upsert_submission(
+    submission_id: str,
+    created_at_str: str,
+    person_uuid: Optional[str],
+    answers: Dict[str, Any],
+) -> None:
+    row = {
         "submission_id": submission_id,
-        "person_id": person_id,
-        "submission_date": answers.get('submission_date'),
-        "service_time": answers.get('service_time'),
-        "attendance_status": answers.get('attendance_status'),
-        "welcome_note": answers.get('welcome_note'),
-        "prayer_request": answers.get('prayer_request'),
-        "phone_number": answers.get('phone_number'),
-        "share_with_elders_only": answers.get('share_with_elders_only'),
-        "created_at": created_at_str
+        "person_id": person_uuid,
+        "submission_date": answers.get("submission_date"),
+        "service_time": answers.get("service_time"),
+        "attendance_status": answers.get("attendance_status"),
+        "welcome_note": answers.get("welcome_note"),
+        "prayer_request": answers.get("prayer_request"),
+        "phone_number": answers.get("phone_number"),
+        "created_at": created_at_str,
     }
 
-# --- MAIN SCRIPT ---
+    # keep it simple: upsert by submission_id so reruns are safe
+    supabase.table("submissions").upsert(
+        row,
+        on_conflict="submission_id",
+    ).execute()
 
-print(f"Starting batch import from Planning Center, resuming at page {START_PAGE}...")
 
-base_url = f"https://api.planningcenteronline.com/people/v2/forms/{FORM_ID}/form_submissions"
-params = {
-    'order': '-created_at',
-    'per_page': PER_PAGE,
-    'include': 'person'
-}
+# -----------------------------
+# MAIN
+# -----------------------------
+def main() -> None:
+    print(f"Starting connection card sync for the most recent {MAX_PAGES} pages...")
 
-page_count = 0
-next_url = base_url
+    base_url = f"https://api.planningcenteronline.com/people/v2/forms/{FORM_ID}/form_submissions"
+    params = {
+        "order": "-created_at",
+        "per_page": PER_PAGE,
+        "include": "person",
+    }
 
-progress_bar = tqdm(total=MAX_PAGES - START_PAGE + 1, desc="Importing Pages")
+    next_url: Optional[str] = base_url
+    page_num = 0
+    people_cache: Dict[str, Optional[str]] = {}
 
-while next_url and page_count < MAX_PAGES:
-    try:
-        response = requests.get(next_url, auth=auth, params=params)
+    total_seen = 0
+    total_upserted = 0
+
+    while next_url and page_num < MAX_PAGES:
+        page_num += 1
+        print(f"\n--- Page {page_num} ---")
+
+        response = requests.get(next_url, auth=auth, params=params, timeout=30)
         response.raise_for_status()
-        data = response.json()
+        payload = response.json()
 
-        submissions = data['data']
-        included = data.get('included', [])
-
-        if page_count < START_PAGE - 1:
-            next_url = data['links'].get('next')
-            params = {}
-            page_count += 1
-            continue
+        submissions = payload.get("data", [])
+        included = payload.get("included", [])
 
         people_lookup = {
-            item['id']: item['attributes']
-            for item in included if item['type'] == 'Person'
+            item["id"]: item.get("attributes", {})
+            for item in included
+            if item.get("type") == "Person"
         }
 
-        people_to_insert = []
-        submissions_to_insert = []
-        existing_people = {}
+        print(f"Fetched {len(submissions)} submissions")
 
         for sub in submissions:
-            submission_id = sub['id']
-            created_at_str = sub['attributes']['created_at']
-            print(f"DEBUG submission {submission_id} created_at={created_at_str}")
+            submission_id = sub["id"]
+            created_at_str = sub.get("attributes", {}).get("created_at")
 
-            person_rel = sub['relationships'].get('person', {}).get('data')
-            print(f"DEBUG submission {submission_id} person_rel={person_rel}")
-
-            if supabase.table('submissions').select('id').eq('submission_id', submission_id).execute().data:
-                print(f"DEBUG skipping duplicate submission {submission_id}")
-                log_file.write(f"⚠️ Skipping duplicate submission {submission_id}\n")
-                continue
-
-        
-
-            # Skip if already exists
-            if supabase.table('submissions').select('id').eq('submission_id', submission_id).execute().data:
-                log_file.write(f"⚠️ Skipping duplicate submission {submission_id}\n")
-                continue
-
-            person_id_ref = sub['relationships'].get('person', {}).get('data', {}).get('id')
-            person_info = people_lookup.get(person_id_ref, {}) if person_id_ref else {}
-
-            if not person_info or not person_id_ref:
-                print(f"DEBUG skipping submission {submission_id}: no person info | person_id_ref={person_id_ref} | person_info_found={bool(person_info)}")
-                log_file.write(f"⚠️ Skipping submission {submission_id}: no person info\n")
-                continue
-
-            # Resolve person in Supabase
-            if person_id_ref not in existing_people:
-                existing = supabase.table('people').select('id').eq('planning_center_id', person_id_ref).execute()
-                if existing.data:
-                    existing_people[person_id_ref] = existing.data[0]['id']
-                else:
-                    new_person = map_person({**person_info, "id": person_id_ref})
-                    people_to_insert.append(new_person)
-                    existing_people[person_id_ref] = new_person['id']
-
-            # --- Fetch form submission values ---
-            values_url = f"https://api.planningcenteronline.com/people/v2/forms/{FORM_ID}/form_submissions/{submission_id}/form_submission_values"
-            values_response = requests.get(values_url, auth=auth)
-            values_response.raise_for_status()
-            values_data = values_response.json()
-
-            answers = {}
-            for value in values_data['data']:
-                field_id = value['relationships']['form_field']['data']['id']
-                display_value = value['attributes'].get('display_value', '')
-
-                if field_id == '1128354':
-                    answers['submission_date'] = display_value
-                elif field_id == '1128358':
-                    answers['service_time'] = display_value
-                elif field_id == '1128356':
-                    answers['attendance_status'] = display_value
-                elif field_id == '1128357':
-                    answers['welcome_note'] = display_value
-                elif field_id == '1128355':
-                    answers['prayer_request'] = display_value
-                elif field_id == '1128353':
-                    answers['phone_number'] = display_value
-                elif field_id == '5027006':
-                    answers['share_with_elders_only'] = display_value.strip().lower() == 'true'
-
-            submissions_to_insert.append(
-                map_submission(submission_id, existing_people[person_id_ref], answers, created_at_str)
+            person_rel = (
+                sub.get("relationships", {})
+                .get("person", {})
+                .get("data")
             )
+            person_id_ref = person_rel.get("id") if person_rel else None
 
-        if people_to_insert:
-            print(f"Inserting {len(people_to_insert)} people on page {page_count + 1}")
-            log_file.write(f"Inserting {len(people_to_insert)} people on page {page_count + 1}\n")
-            supabase.table('people').insert(people_to_insert).execute()
+            try:
+                answers = fetch_submission_values(submission_id)
+                person_uuid = find_or_create_person(person_id_ref, people_lookup, people_cache)
+                upsert_submission(submission_id, created_at_str, person_uuid, answers)
 
-        if submissions_to_insert:
-            print(f"Inserting {len(submissions_to_insert)} submissions on page {page_count + 1}")
-            log_file.write(f"Inserting {len(submissions_to_insert)} submissions on page {page_count + 1}\n")
-            supabase.table('submissions').insert(submissions_to_insert).execute()
+                total_upserted += 1
+            except Exception as e:
+                print(f"Skipping submission {submission_id}: {e}")
 
-        time.sleep(0.3)  # prevent API throttling
+            total_seen += 1
+            time.sleep(0.1)
 
-        next_url = data['links'].get('next')
-        params = {}
-        page_count += 1
-        progress_bar.update(1)
+        next_url = payload.get("links", {}).get("next")
+        params = {}  # next_url already has query params
+        time.sleep(0.3)
 
-    except Exception as e:
-        error_msg = f"❌ Error on page {page_count + 1}: {str(e)}\n"
-        print(error_msg)
-        log_file.write(error_msg)
-        break
+    print("\n✅ Sync complete")
+    print(f"Pages processed: {page_num}")
+    print(f"Submissions seen: {total_seen}")
+    print(f"Submissions upserted: {total_upserted}")
 
-progress_bar.close()
-log_file.close()
 
-print("\n✅ Import complete!\n")
+if __name__ == "__main__":
+    main()
