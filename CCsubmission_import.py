@@ -17,7 +17,7 @@ SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_SERVICE_ROLE_KEY = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
 PER_PAGE = 50
 START_PAGE = 0  # <-- New! Start from page 100 after failure
-MAX_PAGES = 5  # Pull full 581 pages!
+MAX_PAGES = 10  # Pull full 581 pages!
 
 
 ## --- SETUP CONNECTIONS ---
