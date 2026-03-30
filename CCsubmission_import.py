@@ -100,6 +100,17 @@ while next_url and page_count < MAX_PAGES:
         for sub in submissions:
             submission_id = sub['id']
             created_at_str = sub['attributes']['created_at']
+            print(f"DEBUG submission {submission_id} created_at={created_at_str}")
+
+            person_rel = sub['relationships'].get('person', {}).get('data')
+            print(f"DEBUG submission {submission_id} person_rel={person_rel}")
+
+            if supabase.table('submissions').select('id').eq('submission_id', submission_id).execute().data:
+                print(f"DEBUG skipping duplicate submission {submission_id}")
+                log_file.write(f"⚠️ Skipping duplicate submission {submission_id}\n")
+                continue
+
+        
 
             # Skip if already exists
             if supabase.table('submissions').select('id').eq('submission_id', submission_id).execute().data:
@@ -110,6 +121,7 @@ while next_url and page_count < MAX_PAGES:
             person_info = people_lookup.get(person_id_ref, {}) if person_id_ref else {}
 
             if not person_info or not person_id_ref:
+                print(f"DEBUG skipping submission {submission_id}: no person info | person_id_ref={person_id_ref} | person_info_found={bool(person_info)}")
                 log_file.write(f"⚠️ Skipping submission {submission_id}: no person info\n")
                 continue
 
