@@ -14,8 +14,8 @@ from supabase import create_client, Client
 # -----------------------------
 FORM_ID = "167650"
 PER_PAGE = 50
-MAX_PAGES = 10               # still only check the 10 most recent pages
-LOOKBACK_HOURS = 36          # re-sync a rolling recent window
+MAX_PAGES = 10
+LOOKBACK_HOURS = 36
 REQUEST_TIMEOUT = 30
 
 PCO_APP_ID = os.environ["PCO_APP_ID"]
@@ -171,30 +171,34 @@ def main() -> None:
     print(f"Rolling lookback cutoff: {cutoff.isoformat()}")
 
     base_url = f"https://api.planningcenteronline.com/people/v2/forms/{FORM_ID}/form_submissions"
-    params = {
-        "order": "-created_at",
-        "per_page": PER_PAGE,
-        "include": "person",
-    }
-
-    next_url: Optional[str] = base_url
-    page_num = 0
     people_cache: Dict[str, Optional[str]] = {}
 
     total_seen = 0
     total_upserted = 0
     total_skipped_old = 0
 
-    while next_url and page_num < MAX_PAGES:
-        page_num += 1
-        print(f"\n--- Page {page_num} ---")
+    for page_num in range(1, MAX_PAGES + 1):
+        offset = (page_num - 1) * PER_PAGE
+        params = {
+            "order": "-created_at",
+            "per_page": PER_PAGE,
+            "offset": offset,
+            "include": "person",
+        }
 
-        response = requests.get(next_url, auth=auth, params=params, timeout=REQUEST_TIMEOUT)
+        print(f"\n--- Page {page_num} ---")
+        print(f"Using offset={offset}")
+
+        response = requests.get(base_url, auth=auth, params=params, timeout=REQUEST_TIMEOUT)
         response.raise_for_status()
         payload = response.json()
 
         submissions = payload.get("data", [])
         included = payload.get("included", [])
+
+        if not submissions:
+            print("No submissions returned; stopping.")
+            break
 
         people_lookup = {
             item["id"]: item.get("attributes", {})
@@ -204,14 +208,13 @@ def main() -> None:
 
         print(f"Fetched {len(submissions)} submissions")
 
-        if submissions:
-            first_attrs = submissions[0].get("attributes", {})
-            last_attrs = submissions[-1].get("attributes", {})
-            print(
-                f"PAGE {page_num} RANGE: "
-                f"first_created_at={first_attrs.get('created_at')} | "
-                f"last_created_at={last_attrs.get('created_at')}"
-            )
+        first_attrs = submissions[0].get("attributes", {})
+        last_attrs = submissions[-1].get("attributes", {})
+        print(
+            f"PAGE {page_num} RANGE: "
+            f"first_created_at={first_attrs.get('created_at')} | "
+            f"last_created_at={last_attrs.get('created_at')}"
+        )
 
         page_had_recent_rows = False
 
@@ -245,17 +248,13 @@ def main() -> None:
 
             time.sleep(0.05)
 
-        # If an entire page is older than the rolling cutoff, stop early.
         if not page_had_recent_rows:
             print(f"Stopping early: page {page_num} is entirely older than the rolling cutoff.")
             break
 
-        next_url = payload.get("links", {}).get("next")
-        params = {}
         time.sleep(0.2)
 
     print("\n✅ Sync complete")
-    print(f"Pages processed: {page_num}")
     print(f"Submissions seen: {total_seen}")
     print(f"Submissions upserted: {total_upserted}")
     print(f"Submissions skipped as older than cutoff: {total_skipped_old}")
