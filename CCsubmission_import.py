@@ -1,6 +1,7 @@
 import os
 import time
 import uuid
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 
 import requests
@@ -13,7 +14,9 @@ from supabase import create_client, Client
 # -----------------------------
 FORM_ID = "167650"
 PER_PAGE = 50
-MAX_PAGES = 10  # only the 10 most recent pages
+MAX_PAGES = 10               # still only check the 10 most recent pages
+LOOKBACK_HOURS = 36          # re-sync a rolling recent window
+REQUEST_TIMEOUT = 30
 
 PCO_APP_ID = os.environ["PCO_APP_ID"]
 PCO_SECRET = os.environ["PCO_SECRET"]
@@ -31,6 +34,15 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 # -----------------------------
 # HELPERS
 # -----------------------------
+def parse_pco_datetime(value: Optional[str]) -> Optional[datetime]:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except Exception:
+        return None
+
+
 def map_person(person_id: str, person_info: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "id": str(uuid.uuid4()),
@@ -54,7 +66,7 @@ def fetch_submission_values(submission_id: str) -> Dict[str, Any]:
         f"https://api.planningcenteronline.com/people/v2/forms/"
         f"{FORM_ID}/form_submissions/{submission_id}/form_submission_values"
     )
-    response = requests.get(url, auth=auth, timeout=30)
+    response = requests.get(url, auth=auth, timeout=REQUEST_TIMEOUT)
     response.raise_for_status()
     payload = response.json()
 
@@ -143,7 +155,6 @@ def upsert_submission(
         "created_at": created_at_str,
     }
 
-    # keep it simple: upsert by submission_id so reruns are safe
     supabase.table("submissions").upsert(
         row,
         on_conflict="submission_id",
@@ -154,7 +165,10 @@ def upsert_submission(
 # MAIN
 # -----------------------------
 def main() -> None:
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=LOOKBACK_HOURS)
+
     print(f"Starting connection card sync for the most recent {MAX_PAGES} pages...")
+    print(f"Rolling lookback cutoff: {cutoff.isoformat()}")
 
     base_url = f"https://api.planningcenteronline.com/people/v2/forms/{FORM_ID}/form_submissions"
     params = {
@@ -169,12 +183,13 @@ def main() -> None:
 
     total_seen = 0
     total_upserted = 0
+    total_skipped_old = 0
 
     while next_url and page_num < MAX_PAGES:
         page_num += 1
         print(f"\n--- Page {page_num} ---")
 
-        response = requests.get(next_url, auth=auth, params=params, timeout=30)
+        response = requests.get(next_url, auth=auth, params=params, timeout=REQUEST_TIMEOUT)
         response.raise_for_status()
         payload = response.json()
 
@@ -189,9 +204,29 @@ def main() -> None:
 
         print(f"Fetched {len(submissions)} submissions")
 
+        if submissions:
+            first_attrs = submissions[0].get("attributes", {})
+            last_attrs = submissions[-1].get("attributes", {})
+            print(
+                f"PAGE {page_num} RANGE: "
+                f"first_created_at={first_attrs.get('created_at')} | "
+                f"last_created_at={last_attrs.get('created_at')}"
+            )
+
+        page_had_recent_rows = False
+
         for sub in submissions:
             submission_id = sub["id"]
             created_at_str = sub.get("attributes", {}).get("created_at")
+            created_at_dt = parse_pco_datetime(created_at_str)
+
+            total_seen += 1
+
+            if created_at_dt and created_at_dt < cutoff:
+                total_skipped_old += 1
+                continue
+
+            page_had_recent_rows = True
 
             person_rel = (
                 sub.get("relationships", {})
@@ -204,22 +239,26 @@ def main() -> None:
                 answers = fetch_submission_values(submission_id)
                 person_uuid = find_or_create_person(person_id_ref, people_lookup, people_cache)
                 upsert_submission(submission_id, created_at_str, person_uuid, answers)
-
                 total_upserted += 1
             except Exception as e:
                 print(f"Skipping submission {submission_id}: {e}")
 
-            total_seen += 1
-            time.sleep(0.1)
+            time.sleep(0.05)
+
+        # If an entire page is older than the rolling cutoff, stop early.
+        if not page_had_recent_rows:
+            print(f"Stopping early: page {page_num} is entirely older than the rolling cutoff.")
+            break
 
         next_url = payload.get("links", {}).get("next")
-        params = {}  # next_url already has query params
-        time.sleep(0.3)
+        params = {}
+        time.sleep(0.2)
 
     print("\n✅ Sync complete")
     print(f"Pages processed: {page_num}")
     print(f"Submissions seen: {total_seen}")
     print(f"Submissions upserted: {total_upserted}")
+    print(f"Submissions skipped as older than cutoff: {total_skipped_old}")
 
 
 if __name__ == "__main__":
