@@ -559,7 +559,7 @@ def main():
 
     print(f"✅ Final Webflow item id: {final_webflow_item_id}")
 
-create_sermon_uploaded_announcement(
+    create_sermon_uploaded_announcement(
     title=details["title"],
     webflow_item_id=final_webflow_item_id,
 )
